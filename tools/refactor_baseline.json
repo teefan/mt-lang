@@ -835,7 +835,6 @@
       "5edcbe20434cca088aa8ca932de1b0013dc5a88a",
       "5f18583ca03b4849404aaa44d9c5785551c7155f",
       "5f2943d77699cd478bf4669543c3b07289e55eaf",
-      "5f4bf9ec023f4c5744595467ca108c7507a4f7ee",
       "5f894be2c365210be89d32b7c992b2725a298aab",
       "5fa9bee4e329c1322f94fba2517c3a06966afcee",
       "5fd341587d1ab455f5d2201945580d7316e43ffd",
@@ -850,7 +849,6 @@
       "61376ad5d6c8cce62e2ce1ccec5cbb939edd4c3a",
       "6149f2e116e48f18aad6814a52833c6d3392b5fb",
       "621a190e90994e9721e23e63b5a97c234295471e",
-      "622d0df59f061819851154fdfcecbddbed8ccfde",
       "6249ca66672ba564cc47f2eadfc1e7f27c955dd8",
       "624a5e2508811cd6f8ddf4a4475d44a2c609324d",
       "625a32beb12fb2530b53f28d24fb05e02e1a6a8c",
@@ -1453,6 +1451,7 @@
       "d9958a0e519f733468288a15567f10f0bb2a5c5e",
       "d9c448747c615aa5e7b70c673fcda11246137e53",
       "d9e3f316d37a96c3d1ec41495e3dd592daa72d35",
+      "da0aafae49811977b6a4cf3298f2533d5db1aad1",
       "da140162b49e90ec841e03910a9787b8df662d3a",
       "dabbc60f447b129e45954149a2092eb354a7ea0f",
       "daf8ed5239c9f3a083bc9a73e29d5d802c3a4114",
@@ -1542,6 +1541,7 @@
       "ee70940068c73967ac6a4c68f337c45d8fd25f86",
       "ee96ecba8b52d8da8b88117751d6937f14d19670",
       "eea4652e57c766cac1b182c179f72c1e1c49f60f",
+      "eea90951bd3a6b3686d319da3e1f47995520beea",
       "eef8a318d6cd1fdb34e0a80e057bc4724ba8189a",
       "ef122e5c2e26ba45b720bb6e99f07d072f3741b3",
       "ef8e2012fbc8ccbfee26923bcbc48ce79b81f0ee",
@@ -1633,7 +1633,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148914,
+    "total_code": 148925,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2058,9 +2058,9 @@
         "max_function": 234
       },
       "projects/mtc/src/mtc/lowering/foreign.mt": {
-        "lines": 731,
-        "code": 537,
-        "max_line": 154,
+        "lines": 1232,
+        "code": 888,
+        "max_line": 151,
         "max_function": 185
       },
       "projects/mtc/src/mtc/lowering/format.mt": {
@@ -2088,8 +2088,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 14227,
-        "code": 10799,
+        "lines": 13779,
+        "code": 10459,
         "max_line": 157,
         "max_function": 246
       },

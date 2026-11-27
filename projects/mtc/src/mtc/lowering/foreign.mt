@@ -8,6 +8,7 @@ import std.vec as vec
 
 import mtc.ir as ir
 import mtc.parser.ast as ast
+import mtc.semantic.analyzer as analyzer
 import mtc.semantic.types as types
 import mtc.strings
 import mtc.c_naming as naming
@@ -19,6 +20,8 @@ import mtc.lowering.const_eval as const_eval
 import mtc.lowering.format as format
 import mtc.lowering.layout as layout_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.type_resolution as type_res_mod
+import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
@@ -145,7 +148,7 @@ public function lower_foreign_call_direct(
             # `str` value at the raw C boundary (`TextFormat("%s", value)`).
             lowered = lowering.lower_expr(ctx, arg.arg_value)
             if type_helpers.is_str_typed(lowering.ir_expr_type(lowered)):
-                lowered = lowering.lower_cstr_argument(ctx, arg.arg_value, lowered)
+                lowered = lower_cstr_argument(ctx, arg.arg_value, lowered)
         lowered_args.push(lowered)
         i += 1
     # The host allocates this call's own argument temps only after every
@@ -305,7 +308,7 @@ public function lower_inline_foreign_mapping(
                 # the argument: the declared name (`FPoint`) is an alias of the
                 # binding's module and is not resolvable from the caller.
                 let projected_ty = lowering.ir_expr_type(value)
-                if lowering.param_type_is_span(param2.param_type) and lowering.is_array_type(projected_ty):
+                if param_type_is_span(param2.param_type) and lowering.is_array_type(projected_ty):
                     let span_ty = types.generic_type(name = "span", args = lowering.sp_type(lowering.generic_first_arg(projected_ty)))
                     value = lowering.array_value_to_span(value, projected_ty, span_ty)
             values.set(param2.name, value)
@@ -336,7 +339,7 @@ public function lower_inline_foreign_mapping(
         let value_ptr_d = values.get(blocked_name)
         if value_ptr_d != null:
             let value_d = unsafe: read(value_ptr_d)
-            if refs_d == 1 and lowering.is_plain_foreign_call_value(value_d) and not lowering.is_foreign_cstr_temp_call(value_d):
+            if refs_d == 1 and is_plain_foreign_call_value(value_d) and not lowering.is_foreign_cstr_temp_call(value_d):
                 inline_direct_name = blocked_name
 
     # Pass 3: temporary-bind a parameter only where the host does
@@ -427,7 +430,7 @@ public function foreign_param_context_type(
             Option.none:
                 pass
     var ctx_pt = param.param_type
-    let ctx_ty = lowering.opaqueify_type(ctx, lowering.deep_alias_target(ctx, lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, ptr_of(ctx_pt)))))
+    let ctx_ty = lowering.opaqueify_type(ctx, deep_alias_target(ctx, lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, ptr_of(ctx_pt)))))
     ctx.module_name = saved_module
     ctx.analysis = saved_analysis
     return ctx_ty
@@ -452,7 +455,7 @@ public function foreign_wrapper_call_return_type(ctx: ref[lowering.LoweringConte
                     ast.Expr.expr_identifier as id2:
                         let mod_ptr = ctx.analysis.imports.get(id2.name) else:
                             return Option[types.Type].none
-                        match lowering.imported_foreign_call(ctx, read(mod_ptr), ma.member_name):
+                        match imported_foreign_call(ctx, read(mod_ptr), ma.member_name):
                             Option.some as fi:
                                 return Option[types.Type].some(value = fi.value.return_ty)
                             Option.none:
@@ -537,17 +540,17 @@ public function foreign_projection_cast_compatible(actual: types.Type, expected:
                             pass
             _:
                 pass
-        if lowering.is_void_pointer_type(actual) or lowering.is_void_pointer_type(expected):
+        if is_void_pointer_type(actual) or is_void_pointer_type(expected):
             return true
         return foreign_projection_cast_compatible(types.pointer_element(actual), types.pointer_element(expected))
     # A `void*` and an opaque handle share the C representation.
-    if lowering.is_void_pointer_type(actual):
+    if is_void_pointer_type(actual):
         match expected:
             types.Type.ty_opaque:
                 return true
             _:
                 pass
-    if lowering.is_void_pointer_type(expected):
+    if is_void_pointer_type(expected):
         match actual:
             types.Type.ty_opaque:
                 return true
@@ -565,8 +568,8 @@ public function lower_foreign_arg(
 ) -> ptr[ir.Expr]:
     match param.boundary_type:
         Option.some as boundary:
-            if lowering.boundary_is_cstr(boundary.value):
-                return lowering.lower_cstr_argument(ctx, arg, lowering.lower_expr(ctx, arg))
+            if boundary_is_cstr(boundary.value):
+                return lower_cstr_argument(ctx, arg, lowering.lower_expr(ctx, arg))
             # For `in value: T as const_ptr[void]` the host takes the
             # argument's address with `const_pointer_to(parameter.type)` and
             # then projects it to the declared boundary type — the host's
@@ -578,7 +581,7 @@ public function lower_foreign_arg(
                     return lowering.null_literal_to_context_type(arg, in_ty, lowered_val)
                 let in_target = types.generic_type(name = "const_ptr", args = lowering.sp_type(in_ty))
                 var address: ptr[ir.Expr]
-                match lowering.addr_operand_expr(lowered_val):
+                match addr_operand_expr(lowered_val):
                     Option.some as op:
                         let op_ty = lowering.ir_expr_type(op.value)
                         if types.type_equals(op_ty, in_target):
@@ -591,7 +594,7 @@ public function lower_foreign_arg(
                             ))
                     Option.none:
                         address = lowering.alloc_expr(ir.Expr.expr_address_of(expression = lowered_val, ty = in_target))
-                return lowering.project_foreign_boundary(ctx, address, foreign_boundary_type(ctx, info, param))
+                return project_foreign_boundary(ctx, address, foreign_boundary_type(ctx, info, param))
             # A plain `as` boundary: a bare literal takes the parameter's
             # declared type, then the value projects to the declared boundary —
             # the host's `lower_foreign_argument_value` fallback +
@@ -603,7 +606,7 @@ public function lower_foreign_arg(
             # constant cast at a foreign boundary (`set_render_draw_color(…,
             # ALPHA_OPAQUE)` with a `ubyte` parameter casts the `int` const).
             typed = lowering.contextual_numeric_cast(ctx, arg, typed, ctx_ty, false, false)
-            return lowering.project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
+            return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
         Option.none:
             # A float/double parameter threads its expected type into an
             # arithmetic binary argument (the host's `lower_contextual_expression`
@@ -641,7 +644,7 @@ public function lower_foreign_arg(
                     slot_ty = types.unwrap_nullable(slot_ty)
                 let slot_is_pointer = types.is_raw_pointer(slot_ty) or types.is_ref_type(slot_ty) or types.is_own_type(slot_ty)
                 let slot_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(lowering.qualify_type(ctx, slot_ty)))
-                match lowering.addr_operand_expr(lowered):
+                match addr_operand_expr(lowered):
                     Option.some as op:
                         return lowering.alloc_expr(ir.Expr.expr_cast(
                             target_type = slot_ptr_ty,
@@ -685,7 +688,7 @@ public function lower_foreign_arg(
                             expression = lowered,
                             ty = types.primitive("ptr[void]")
                         ))
-                        return lowering.project_foreign_boundary(ctx, borrowed, foreign_boundary_type(ctx, info, param))
+                        return project_foreign_boundary(ctx, borrowed, foreign_boundary_type(ctx, info, param))
             # Every bare literal takes the parameter's declared type — the
             # host's `lower_contextual_expression` (int/float/string/null all
             # retype, not just `null`), resolved in the param's declaring
@@ -695,7 +698,7 @@ public function lower_foreign_arg(
             let ctx_ty = foreign_param_context_type(ctx, info, param)
             var typed = lowering.literal_value_to_context_type(ctx, arg, ctx_ty, lowered)
             typed = lowering.contextual_numeric_cast(ctx, arg, typed, ctx_ty, false, false)
-            return lowering.project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
+            return project_foreign_boundary(ctx, typed, foreign_boundary_type(ctx, info, param))
 
 
 
@@ -729,3 +732,501 @@ public function foreign_mapping_is_simple(mapping: ptr[ast.Expr]) -> bool:
 ## (`p.x`).  Method calls are resolved through `lower_method_resolved` and
 ## `lower_dyn_method_call`; other member forms (atomic, str_buffer, event) are
 ## dispatched by their type.
+
+public function is_plain_foreign_call_value(ep: ptr[ir.Expr]) -> bool:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_call:
+                return true
+            ir.Expr.expr_call_indirect:
+                return true
+            _:
+                return false
+
+
+## The parameter's declared type, resolved in its *declaring* module and
+## deepened/opaqueified: the context type the host's
+## `lower_contextual_expression` gives every foreign argument (session 44,
+## items 3ag/5b).
+
+
+public function is_void_pointer_type(t: types.Type) -> bool:
+    return types.is_pointer_type(t) and types.is_void(types.pointer_element(t))
+
+
+## The host's `foreign_identity_projection_expression`: a value at a foreign
+## boundary keeps its type when equal to the boundary, is `IR::Cast` when the
+## types are projection-compatible, and is otherwise left unchanged (the self's
+## type resolution is coarser than the host's in a few nominal corners).
+
+
+public function project_foreign_boundary(ctx: ref[lowering.LoweringContext], value: ptr[ir.Expr], boundary: types.Type) -> ptr[ir.Expr]:
+    let value_ty = lowering.ir_expr_type(value)
+    if types.type_equals(value_ty, boundary):
+        return value
+    if foreign_projection_cast_compatible(value_ty, boundary):
+        return lowering.alloc_expr(ir.Expr.expr_cast(target_type = boundary, expression = value, ty = boundary))
+    return value
+
+
+## A `str` argument at a `cstr` boundary (a declared `str as cstr` parameter or
+## a variadic slot): a string literal becomes a C string literal; an already
+## cstr value passes through; a cstr-backed `str` (a literal-backed local, a
+## dynamic format temp, or a syntactically cstr-backed `if`/`unsafe`) passes its
+## `data` pointer in an `IR::Cast(cstr)`; anything else takes the malloc-backed
+## `mt_foreign_str_to_cstr_temp` copy (hoisted/freed by the caller).
+
+
+public function lower_cstr_argument(ctx: ref[lowering.LoweringContext], arg: ptr[ast.Expr], lowered_str: ptr[ir.Expr]) -> ptr[ir.Expr]:
+    let cstr_ty = types.primitive("cstr")
+    unsafe:
+        match read(arg):
+            ast.Expr.expr_string_literal as lit:
+                return lowering.alloc_expr(ir.Expr.expr_string_literal(value = lit.value, ty = cstr_ty, cstring = true))
+            _:
+                pass
+    let arg_ty = lowering.ir_expr_type(lowered_str)
+    match arg_ty:
+        types.Type.ty_primitive as p:
+            if p.name == "cstr":
+                return lowered_str
+        _:
+            pass
+    if format.is_cstr_backed_lowered(ctx, lowered_str) or format.ast_expr_cstr_backed(ctx, arg):
+        let data_member = lowering.alloc_expr(ir.Expr.expr_member(
+            receiver = lowered_str,
+            member = "data",
+            ty = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("char")))
+        ))
+        return lowering.alloc_expr(ir.Expr.expr_cast(target_type = cstr_ty, expression = data_member, ty = cstr_ty))
+    return lowering.alloc_expr(ir.Expr.expr_call(
+        callee = "mt_foreign_str_to_cstr_temp",
+        arguments = lowering.single_expr_span(lowered_str),
+        ty = cstr_ty,
+    ))
+
+
+public function boundary_is_cstr(boundary: ast.TypeRef) -> bool:
+    if boundary.name.parts.len != 1:
+        return false
+    unsafe:
+        return read(boundary.name.parts.data + 0) == "cstr"
+
+
+## Follow a module-local type alias chain to its target type.  A foreign
+## boundary's pointer element is the host's `parameter.type` — the *resolved*
+## declared type — so `WorldDef` (a wrapper alias of `c.b2WorldDef`) must deepen
+## to the raw `b2WorldDef`; `qualify_type` deliberately keeps std.c-targeting
+## aliases by name for C-signature purposes, which is why this exists
+## (session 43, item 3q).
+
+
+public function deep_alias_target(ctx: ref[lowering.LoweringContext], t: types.Type) -> types.Type:
+    var current = t
+    var guard: ptr_uint = 0
+    while guard < 8:
+        guard += 1
+        var module_name = ""
+        var type_name = ""
+        match current:
+            types.Type.ty_imported as im:
+                let im_bp = unsafe: read(im.payload)
+                if im_bp.args.len > 0 or match_mod.is_prelude_variant_name(im_bp.name):
+                    return current
+                module_name = im_bp.module_name
+                type_name = im_bp.name
+            types.Type.ty_named as nm:
+                let nm_np = unsafe: read(nm.payload)
+                if nm_np.module_name.len == 0:
+                    return current
+                module_name = nm_np.module_name
+                type_name = nm_np.name
+            _:
+                return current
+        match type_res_mod.resolve_imported_alias_type(ctx.program_analyses, module_name, type_name):
+            Option.some as target:
+                let next = target.value
+                if types.type_equals(next, current):
+                    return current
+                current = next
+            Option.none:
+                # `qualify_type` keeps a std.c-targeting alias by name but pairs
+                # it with the *target* module (`ty_imported("std.c.raw.lib",
+                # "MyDef")` for `type MyDef = c.Def`).  Look the alias up in the
+                # module that actually declares it, and accept the result only
+                # when it targets the module already on the type — any other
+                # same-named alias elsewhere would be the wrong rewrite.
+                match resolve_alias_targeting_module(ctx.program_analyses, module_name, type_name):
+                    Option.some as target:
+                        let next = target.value
+                        if types.type_equals(next, current):
+                            return current
+                        current = next
+                    Option.none:
+                        return current
+    return current
+
+
+## The target of an alias named `type_name` declared in *some* module, accepted
+## only when it is an imported type of the given `module_name` (the pairing
+## `qualify_type` leaves for a std.c-targeting alias).
+
+
+public function resolve_alias_targeting_module(
+    analyses: span[analyzer.Analysis],
+    module_name: str,
+    type_name: str
+) -> Option[types.Type]:
+    var ai: ptr_uint = 0
+    while ai < analyses.len:
+        var a: analyzer.Analysis
+        unsafe:
+            a = read(analyses.data + ai)
+        let alias_target = a.type_alias_types.get(type_name)
+        if alias_target != null:
+            unsafe:
+                let at = read(alias_target)
+                var base = at
+                if types.is_nullable_type(base):
+                    base = types.unwrap_nullable(base)
+                match base:
+                    types.Type.ty_imported as aim:
+                        let aim_bp = unsafe: read(aim.payload)
+                        if aim_bp.module_name == module_name:
+                            return Option[types.Type].some(value = types.imported_type(
+                                module_name = aim_bp.module_name,
+                                name = aim_bp.name,
+                                args = aim_bp.args
+                            ))
+                        return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+        ai += 1
+    return Option[types.Type].none
+
+
+## The operand an address-taking foreign boundary should cast rather than
+## address again — the host's `lower_addr_expression`: an `IR::Name` with
+## `pointer: true` (a C pointer variable, e.g. an editable method's `this`
+## receiver) is itself the pointer, and `*p` unwraps to `p`.  None for
+## everything else (which takes `IR::AddressOf`).
+
+
+public function addr_operand_expr(ep: ptr[ir.Expr]) -> Option[ptr[ir.Expr]]:
+    unsafe:
+        match read(ep):
+            ir.Expr.expr_name as n:
+                if n.pointer.unwrap_or(false):
+                    return Option[ptr[ir.Expr]].some(value = ep)
+                return Option[ptr[ir.Expr]].none
+            ir.Expr.expr_unary as u:
+                if u.operator == "*":
+                    return Option[ptr[ir.Expr]].some(value = u.operand)
+                return Option[ptr[ir.Expr]].none
+            _:
+                return Option[ptr[ir.Expr]].none
+
+
+## True when a declared foreign parameter type is spelled `span[T]`, i.e. the
+## array→span boundary coercion applies to its argument.
+
+
+public function param_type_is_span(type_ref: ast.TypeRef) -> bool:
+    if type_ref.name.parts.len != 1:
+        return false
+    unsafe:
+        return read(type_ref.name.parts.data + 0) == "span"
+
+# =============================================================================
+#  Foreign / external function registry
+# =============================================================================
+
+## Pre-scan declarations to map each external function to its C name and each
+## foreign function to its mapped C function and boundary parameters, so calls
+## can be lowered to direct C calls.
+
+
+public function collect_foreign_functions(ctx: ref[lowering.LoweringContext], decls: span[ast.Decl]) -> void:
+    var i: ptr_uint = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                ctx.extern_map.set(ef.name, extern_c_name(ef.name, ef.mapping))
+            _:
+                pass
+        i += 1
+
+    i = 0
+    while i < decls.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(decls.data + i)
+        match d:
+            ast.Decl.decl_foreign_function as ff:
+                let ff_simple = foreign_mapping_is_simple(ff.mapping)
+                var ff_c_name = ""
+                if ff_simple:
+                    ff_c_name = resolve_foreign_c_name(ctx, ff.mapping)
+                ctx.foreign_map.set(ff.name, lowering.ForeignInfo(
+                    c_name = ff_c_name,
+                    # The declared return type resolved like any other type ref:
+                    # a nominal return (`-> Vector4` through `type Vector4 =
+                    # c.Vector4`) must yield the originating raw type, exactly as
+                    # `imported_foreign_call` resolves a cross-module callee.
+                    return_ty = lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, ff.return_type)),
+                    params = ff.foreign_params,
+                    mapping = ff.mapping,
+                    simple = ff_simple,
+                    owner_module = ctx.module_name,
+                    type_params = ff.type_params,
+                ))
+            _:
+                pass
+        i += 1
+
+
+## Resolve a cross-module foreign function call: find a `foreign function` decl
+## named `name` in the target module and build its lowering.ForeignInfo (mapped C name +
+## return type + params) resolved in the owner module's context.  Returns none
+## when the target has no such foreign function.
+
+
+public function imported_foreign_call(ctx: ref[lowering.LoweringContext], target_module: str, name: str) -> Option[lowering.ForeignInfo]:
+    let owner_a = lowering.find_imported_analysis(ctx, target_module) else:
+        return Option[lowering.ForeignInfo].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = target_module
+    ctx.analysis = owner_a
+    var result = Option[lowering.ForeignInfo].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_foreign_function as ff:
+                if ff.name == name:
+                    let ff_simple = foreign_mapping_is_simple(ff.mapping)
+                    var ff_c_name = ""
+                    if ff_simple:
+                        ff_c_name = resolve_foreign_c_name(ctx, ff.mapping)
+                    result = Option[lowering.ForeignInfo].some(value = lowering.ForeignInfo(
+                        c_name = ff_c_name,
+                        return_ty = lowering.qualify_type(ctx, lowering.resolve_type_ref(ctx, ff.return_type)),
+                        params = ff.foreign_params,
+                        mapping = ff.mapping,
+                        simple = ff_simple,
+                        owner_module = target_module,
+                        type_params = ff.type_params,
+                    ))
+            _:
+                pass
+        di += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return result
+
+
+## Resolve a cross-module external function call: find an `external function`
+## decl named `name` in the target module and return its bare C linkage name
+## (or `= target` mapping) plus resolved return type.  External functions carry
+## no module prefix, so a cross-module call must use this bare name instead of
+## `<module>_<name>`.  Returns none when the target has no such external function.
+
+
+public function imported_extern_call(ctx: ref[lowering.LoweringContext], target_module: str, name: str) -> Option[lowering.ForeignInfo]:
+    let owner_a = lowering.find_imported_analysis(ctx, target_module) else:
+        return Option[lowering.ForeignInfo].none
+    var saved_module = ctx.module_name
+    var saved_analysis = ctx.analysis
+    ctx.module_name = target_module
+    ctx.analysis = owner_a
+    var result = Option[lowering.ForeignInfo].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                if ef.name == name:
+                    var ret = ctx.void_ty
+                    if ef.return_type != null:
+                        ret = lowering.qualify_type(
+                            ctx,
+                            type_helpers.resolve_return_type(ctx, Option[analyzer.FnSig].none, ef.return_type)
+                        )
+                    result = Option[lowering.ForeignInfo].some(value = lowering.ForeignInfo(
+                        c_name = extern_c_name(ef.name, ef.mapping),
+                        return_ty = ret,
+                        params = ef.extern_params,
+                        mapping = null,
+                        simple = true,
+                        owner_module = target_module,
+                        type_params = ef.type_params,
+                    ))
+            _:
+                pass
+        di += 1
+    ctx.module_name = saved_module
+    ctx.analysis = saved_analysis
+    return result
+
+
+## The C linkage name of an external function declared in `target_module`,
+## honoring a `= c"..."` rename mapping (`external function foo = c"__real"`
+## resolves to `__real`).  Returns none when `name` is not an external function
+## of that module, so callers can fall back to the bare member name.
+
+
+public function imported_extern_c_name(ctx: ref[lowering.LoweringContext], target_module: str, name: str) -> Option[str]:
+    let owner_a = lowering.find_imported_analysis(ctx, target_module) else:
+        return Option[str].none
+    var di: ptr_uint = 0
+    while di < owner_a.source_file.declarations.len:
+        var d: ast.Decl
+        unsafe:
+            d = read(owner_a.source_file.declarations.data + di)
+        match d:
+            ast.Decl.decl_extern_function as ef:
+                if ef.name == name:
+                    return Option[str].some(value = extern_c_name(ef.name, ef.mapping))
+            _:
+                pass
+        di += 1
+    return Option[str].none
+
+
+## Lower a cross-module external function call.  External functions use their
+## bare C name; `out`/`inout` parameters are passed by address (`&arg`) so the C
+## function can write back through the pointer, mirroring Ruby's
+## lower_foreign_pointer_argument_value.
+
+
+public function lower_extern_call(
+    ctx: ref[lowering.LoweringContext],
+    info: lowering.ForeignInfo,
+    args: span[ast.Argument],
+    call_ep: ptr[ast.Expr]
+) -> ptr[ir.Expr]:
+    var ir_args = vec.Vec[ir.Expr].create()
+    var i: ptr_uint = 0
+    while i < args.len:
+        var arg: ast.Argument
+        unsafe:
+            arg = read(args.data + i)
+        var lowered = lowering.lower_expr(ctx, arg.arg_value)
+        if i < info.params.len:
+            var param: ast.ForeignParam
+            unsafe:
+                param = read(info.params.data + i)
+            # Every bare literal takes the parameter's declared type — the raw
+            # external call path shares the foreign rule (`c.time(null)` carries
+            # `Nullable(ptr[time_t])`; session 44, item 5b).
+            lowered = lowering.literal_value_to_context_type(
+                ctx,
+                arg.arg_value,
+                foreign_param_context_type(ctx, info, param),
+                lowered
+            )
+            if (
+                param.param_mode == ast.ForeignParamMode.fmode_out
+                or param.param_mode == ast.ForeignParamMode.fmode_inout
+            ):
+                # The host's `lower_foreign_pointer_argument_value` (the external
+                # call path shares it): the address-of's type is
+                # `pointer_to(foreign_slot_boundary_value_type(parameter.type))`,
+                # so a nullable pointer-like slot contributes its base
+                # (`mt_mutex_create(handle)` with `handle: ptr[mt_mutex]?` gets
+                # `ptr[ptr[mt_mutex]]`, not `ptr[ptr[mt_mutex]?]`).
+                var slot_ty = foreign_param_context_type(ctx, info, param)
+                if types.is_nullable_type(slot_ty) and lowering.is_nullable_pointer_like(slot_ty):
+                    slot_ty = types.unwrap_nullable(slot_ty)
+                let slot_ptr_ty = types.generic_type(name = "ptr", args = lowering.sp_type(lowering.qualify_type(ctx, slot_ty)))
+                match addr_operand_expr(lowered):
+                    Option.some as op:
+                        lowered = lowering.alloc_expr(ir.Expr.expr_cast(
+                            target_type = slot_ptr_ty,
+                            expression = op.value,
+                            ty = slot_ptr_ty
+                        ))
+                    Option.none:
+                        lowered = lowering.alloc_expr(ir.Expr.expr_address_of(expression = lowered, ty = slot_ptr_ty))
+        unsafe:
+            ir_args.push(read(lowered))
+        i += 1
+    return lowering.alloc_expr(ir.Expr.expr_call(
+        callee = info.c_name,
+        arguments = ir_args.as_span(),
+        ty = type_helpers.expr_type(ctx, call_ep)
+    ))
+
+
+## Pre-scan function declarations to record each one's resolved return type in
+## ctx.function_returns, so call lowering can use the correct type even when the
+## analyzer left it unresolved (tuple returns, array returns, etc.).
+
+
+public function resolve_foreign_c_name(ctx: ref[lowering.LoweringContext], mapping: ptr[ast.Expr]) -> str:
+    unsafe:
+        match read(mapping):
+            ast.Expr.expr_identifier as id:
+                let ext = ctx.extern_map.get(id.name)
+                if ext != null:
+                    return read(ext)
+                return id.name
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as recv_id:
+                        let mod_ptr = ctx.analysis.imports.get(recv_id.name)
+                        if mod_ptr != null:
+                            match imported_extern_c_name(ctx, read(mod_ptr), ma.member_name):
+                                Option.some as renamed:
+                                    return renamed.value
+                                Option.none:
+                                    pass
+                    _:
+                        pass
+                return ma.member_name
+            ast.Expr.expr_prefix_cast as pc:
+                return resolve_foreign_c_name(ctx, pc.expression)
+            ast.Expr.expr_call as call:
+                return resolve_foreign_c_name(ctx, call.callee)
+            _:
+                return ""
+
+
+## True when a foreign `= target` mapping is a bare name (`= atoi`,
+## `= c.InitWindow`): the call then lowers 1:1 through the mapped C function.
+## Call, cast, and construction mappings are inline expressions that must be
+## expanded with argument substitution instead.
+
+
+public function extern_c_name(name: str, mapping: ptr[ast.Expr]?) -> str:
+    let m = mapping else:
+        return name
+    unsafe:
+        match read(m):
+            ast.Expr.expr_identifier as id:
+                return id.name
+            ast.Expr.expr_member_access as ma:
+                return ma.member_name
+            ast.Expr.expr_string_literal as s:
+                return s.value
+            _:
+                return name
+
+
+## The C name a foreign function maps to: resolve its `= target` identifier
+## through the external registry (so `= atoi` yields the external's C name),
+## falling back to the target name.  A `= c.Name` member mapping resolves the
+## receiver alias to its module and honors the external function's own
+## `= c"..."` rename there (so `= c.tracy_emit_zone_begin` yields
+## `___tracy_emit_zone_begin`), mirroring Ruby's external_function_c_name.
+## Complex inline mapping expressions are handled by
+## lower_inline_foreign_mapping instead; this resolver only needs the
+## bare-name forms and returns "" for anything else.
