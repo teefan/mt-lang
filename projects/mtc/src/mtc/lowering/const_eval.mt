@@ -469,7 +469,7 @@ public function lower_imported_const_initializer(
     var saved_foreign = ctx.foreign_map
     var saved_variants = ctx.variants
     var saved_locals = ctx.locals
-    var saved_counter = ctx.temp_counter
+    var saved_counter = ctx.counters.temp
     var saved_subst = ctx.type_substitution
     var saved_inside = ctx.inside_async
     var saved_cps = ctx.async_cps_active
@@ -480,7 +480,7 @@ public function lower_imported_const_initializer(
     ctx.foreign_map = map_mod.Map[str, lowering.ForeignInfo].create()
     ctx.variants = map_mod.Map[str, lowering.VariantInfo].create()
     ctx.locals = vec.Vec[lowering.LocalBinding].create()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.type_substitution = map_mod.Map[str, types.Type].create()
     ctx.inside_async = false
     ctx.async_cps_active = false
@@ -496,7 +496,7 @@ public function lower_imported_const_initializer(
     ctx.foreign_map = saved_foreign
     ctx.variants = saved_variants
     ctx.locals = saved_locals
-    ctx.temp_counter = saved_counter
+    ctx.counters.temp = saved_counter
     ctx.type_substitution = saved_subst
     ctx.inside_async = saved_inside
     ctx.async_cps_active = saved_cps

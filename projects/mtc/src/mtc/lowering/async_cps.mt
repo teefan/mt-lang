@@ -279,7 +279,7 @@ public function lower_async_fn(
     # Function-level state starts fresh (the host's per-function env): the
     # fresh-temp counter, format destination and cstr metadata.
     ctx.locals.clear()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -290,8 +290,8 @@ public function lower_async_fn(
     # inherits a previous has-await function's frame state.
     ctx.async_cps_active = false
     ctx.async_completion_active = false
-    ctx.async_await_counter = 0
-    ctx.async_tmp_counter = 0
+    ctx.counters.async_await = 0
+    ctx.counters.async_tmp = 0
     ctx.async_local_fields = vec.Vec[ir.Field].create()
     ctx.async_await_fields = vec.Vec[ir.Field].create()
     ctx.async_local_seen = map_mod.Map[str, bool].create()
@@ -558,7 +558,7 @@ function build_async_resume_body(
         var saved_completion = ctx.async_completion_active
         ctx.async_completion_active = true
         # Fresh field vecs for this function.
-        ctx.async_await_counter = 0
+        ctx.counters.async_await = 0
         ctx.async_local_fields = vec.Vec[ir.Field].create()
         ctx.async_await_fields = vec.Vec[ir.Field].create()
         ctx.async_local_seen = map_mod.Map[str, bool].create()
@@ -581,7 +581,7 @@ function build_async_resume_body(
         ctx.inside_async = true
 
         var body_stmts = lowering.lower_function_body(ctx, body)
-        let await_count = ctx.async_await_counter
+        let await_count = ctx.counters.async_await
         # Copy the accumulated fields back to ctx so the frame builder picks them
         # up (ctx fields may have been reassigned by nested lower_async_fn calls).
         ctx.async_local_fields = my_local_fields
@@ -1575,8 +1575,8 @@ public function async_hoist_awaits(
                 let task_ir = lowering.lower_expr(ctx, inner)
                 let task_ty = normalize_awaited_task_type(lowering.ir_expr_type(task_ir))
                 let result_ty = extract_task_element_type(ctx, task_ty)
-                ctx.async_tmp_counter += 1
-                let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.async_tmp_counter))
+                ctx.counters.async_tmp += 1
+                let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.counters.async_tmp))
                 let field_name = strings.join_two("local_", tmp)
                 let frame_cname = strings.join_two("__mt_frame->", field_name)
                 async_register_local_field(ctx, tmp, field_name, frame_cname, result_ty)
@@ -1688,8 +1688,8 @@ public function async_hoist_awaits(
                 let then_h = async_hoist_awaits(ctx, ref_of(then_setup), ie.then_expr)
                 var else_setup = vec.Vec[ir.Stmt].create()
                 let else_h = async_hoist_awaits(ctx, ref_of(else_setup), ie.else_expr)
-                ctx.async_tmp_counter += 1
-                let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.async_tmp_counter))
+                ctx.counters.async_tmp += 1
+                let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.counters.async_tmp))
                 let field_name = strings.join_two("local_", tmp)
                 let frame_cname = strings.join_two("__mt_frame->", field_name)
                 var result_ty = type_helpers.expr_type(ctx, ep)
@@ -1803,7 +1803,7 @@ public function async_register_normalized_body_fields(ctx: ref[lowering.Lowering
     var entries = vec.Vec[AsyncFieldEntry].create()
     # Predicted temp names start at the lowering's current counter but never
     # advance it: the lowering allocates them itself.
-    var counter = ctx.async_tmp_counter
+    var counter = ctx.counters.async_tmp
     async_collect_stmt_fields(ctx, unsafe: read(b), ref_of(entries), ref_of(counter))
     var i: ptr_uint = 0
     while i < entries.len():
@@ -2320,8 +2320,8 @@ public function async_emit_await(
     let bool_ty = ctx.bool_ty
     let int_ty = types.primitive("int")
     let void_ty = ctx.void_ty
-    let idx = ctx.async_await_counter
-    ctx.async_await_counter = idx + 1
+    let idx = ctx.counters.async_await
+    ctx.counters.async_await = idx + 1
     let reusable = async_reusable_await_field(ctx, task_ep)
     var await_field: str
     if reusable.len > 0:
@@ -2650,8 +2650,8 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
     let proc_saved = lowering.begin_stmt_setup(ctx, lowering.HoistMode.hm_value)
     # The host lowers the root proc in a fresh env: the env temp is
     # `__mt___mt_async_main_root_env_1` (the counter starts at zero).
-    let saved_proc_counter = ctx.temp_counter
-    ctx.temp_counter = 0
+    let saved_proc_counter = ctx.counters.temp
+    ctx.counters.temp = 0
     let proc_expr = lowering.lower_proc_expression_typed_named(
         ctx,
         span[ast.Param](),
@@ -2660,7 +2660,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
         proc_fn_ty,
         "__mt_async_main_root"
     )
-    ctx.temp_counter = saved_proc_counter
+    ctx.counters.temp = saved_proc_counter
     let proc_collected = lowering.collect_stmt_setup(ctx, proc_saved)
     lowering.emit_hoist_setup(ref_of(body), proc_base, proc_collected)
     let proc_named_ty = lowering.ir_expr_type(proc_expr)

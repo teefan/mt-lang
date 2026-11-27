@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-175-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-176-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 175, 2026-11-26)
+## Status at a glance (session 176, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -129,6 +129,7 @@ history.
 | Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; 100-cycle no-growth gate |
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
 | Lowering extraction | **`lowering/statements.mt` + `lowering/member_access.mt` + `lowering/expressions.mt`** (session 175): statements owns the full statement lowering (1,664 lines); member_access owns identifier/member access and member calls (960 lines); expressions owns binary/identifier/specialization/expression dispatch (784 lines).  `lowering.mt` moved from 23,008 to 19,696 lines (3,312 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The remaining 4.2 clusters are the call/declaration/event lowering; 4.3 context grouping and 4.4 per-module lowering remain |
+| Context grouping | **`LoweringCounters`** (session 176): `temp`, `match_label`, `async_await`, and `async_tmp` moved from `LoweringContext` into a nested `LoweringCounters` struct; 44 access sites updated across lowering modules.  Access-only refactor, no behavior change; the full compiler-core gate is green |
 | Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 645 compared / 30 changed / 7 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
 | Analyzer call-argument compatibility (CLOSED, sessions 139/141) | The session-138 coercion table matched the archived host in both directions and at the same message/position.  Session 139 ported per-parameter expected types and compile-time numeric folding; session 141 closed named arguments, imported/method explicit specializations, extern/foreign arity/types, nullable numeric targets, and strictly-bool conditions.  The constructor-field anchor is a reviewed difference, not a residual (session 146). |
@@ -6666,6 +6667,25 @@ The lowering core has been split into statement and member-expression modules:
   expression/declaration clusters.  The 4.2 target remains 12k lines; 4.3
   context grouping and 4.4 per-module lowering are not started.  Per-module
   lowering remains conditional on measurements.
+
+**Verified with the compiler-core gate:** dev build + IR verify; dev suite
+**23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance
+**22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
+**497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **645 compared /
+30 changed / 7 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 176 — Wave 4.3 counter grouping
+
+- Added `LoweringCounters` with `temp`, `match_label`, `async_await`, and
+  `async_tmp`; `LoweringContext.counters` replaces the four flat fields.
+  All 44 context accesses in the lowering modules and the monomorphized-context
+  constructor were updated mechanically.
+- This is an access-only structural change; the generated C bodies and all
+  behavior oracles are unchanged.
+- **4.4 remains deferred:** whole-program lowering is still the path, and no
+  per-module lowering cache is added without a measured self-host watch
+  bottleneck.  The watch loop already reuses `ModuleCache` for parse/analysis
+  and the per-TU object cache for unchanged C units.
 
 **Verified with the compiler-core gate:** dev build + IR verify; dev suite
 **23/0**; bootstrap fixed point; `test/mt` **106/0**; strict **0**; conformance

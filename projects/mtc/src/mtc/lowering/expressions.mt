@@ -73,8 +73,8 @@ public function lower_short_circuit_binary(
         let right_collected = lowering.collect_stmt_setup(ctx, right_saved)
         lowering.append_cleanup_stmts(ref_of(ctx.hoist_cleanups), left_collected.cleanups)
         lowering.append_cleanup_stmts(ref_of(ctx.hoist_cleanups), right_collected.cleanups)
-        ctx.async_tmp_counter += 1
-        let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.async_tmp_counter))
+        ctx.counters.async_tmp += 1
+        let tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.counters.async_tmp))
         let field_name = strings.join_two("local_", tmp)
         let frame_cname = strings.join_two("__mt_frame->", field_name)
         let field_count_before = async_cps.async_local_field_count(ctx)

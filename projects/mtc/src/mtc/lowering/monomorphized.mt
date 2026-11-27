@@ -42,7 +42,7 @@ public function lower_specialized_function(
 ) -> ir.Function:
     # Reset function-level state
     ctx.locals.clear()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -257,7 +257,7 @@ function create_lowering_context(
         is_root_module = false,
         locals = vec.Vec[lowering.LocalBinding].create(),
         flow_scopes = vec.Vec[map_mod.Map[str, types.Type]].create(),
-        temp_counter = 0,
+        counters = lowering.LoweringCounters(temp = 0, match_label = 0, async_await = 0, async_tmp = 0),
         fmt_dest_name = "",
         fmt_counter = map_mod.Map[str, ptr_uint].create(),
         fmt_counter_visible = false,
@@ -266,7 +266,6 @@ function create_lowering_context(
         extern_map = map_mod.Map[str, str].create(),
         function_returns = map_mod.Map[str, types.Type].create(),
         variants = map_mod.Map[str, lowering.VariantInfo].create(),
-        match_label_counter = 0,
         program_returns = prog_returns,
         program_async = prog_async,
         prelude_arm_field_types = pl_field_types,
@@ -319,8 +318,6 @@ function create_lowering_context(
         async_resume_c = "",
         async_result_ty = types.primitive("void"),
         async_result_is_void = true,
-        async_await_counter = 0,
-        async_tmp_counter = 0,
         async_local_fields = vec.Vec[ir.Field].create(),
         async_await_fields = vec.Vec[ir.Field].create(),
         async_local_seen = map_mod.Map[str, bool].create(),

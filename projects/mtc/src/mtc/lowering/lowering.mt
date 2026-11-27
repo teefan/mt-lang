@@ -251,6 +251,14 @@ public struct HoistSaved:
     # `materialize_array_calls: !array_type?(…)` at return/assignment/local).
     array_exempt: ptr[ast.Expr]?
 
+## Per-compile lowering counters, grouped out of the context god object.
+public struct LoweringCounters:
+    temp: ptr_uint
+    match_label: ptr_uint
+    async_await: ptr_uint
+    async_tmp: ptr_uint
+
+
 public struct LoweringContext:
     module_name: str
     module_path: str
@@ -277,7 +285,7 @@ public struct LoweringContext:
     # falsy refinements of a terminating else-less `if` for the rest of the
     # block.
     flow_scopes: vec.Vec[map_mod.Map[str, types.Type]]
-    temp_counter: ptr_uint
+    counters: LoweringCounters
     foreign_map: map_mod.Map[str, ForeignInfo]
     extern_map: map_mod.Map[str, str]
     function_returns: map_mod.Map[str, types.Type]
@@ -300,7 +308,6 @@ public struct LoweringContext:
     # Borrowed pointer into the map owned by `lower`.
     # Per-module counter for `__mt_match_N` labels in struct-pattern (if/goto)
     # variant matches; mirrors Ruby's @match_label_counter.
-    match_label_counter: ptr_uint
     program_returns: ptr[map_mod.Map[str, types.Type]]
     ## Async cross-module functions, keyed by their C linkage name.  Built once
     ## with `program_returns`; `is_cross_module_function_async` used to rescan
@@ -483,11 +490,9 @@ public struct LoweringContext:
     async_resume_c: str
     async_result_ty: types.Type
     async_result_is_void: bool
-    async_await_counter: ptr_uint
     # The host's per-function normalization temp counter
     # (`fresh_async_temp_name`, normalization.rb:475): hoisted awaits become
     # `__mt_async_tmp_<N>` local decls (field `local___mt_async_tmp_<N>`).
-    async_tmp_counter: ptr_uint
     async_local_fields: vec.Vec[ir.Field]
     async_await_fields: vec.Vec[ir.Field]
     async_local_seen: map_mod.Map[str, bool]
@@ -1428,7 +1433,7 @@ public function lower_extending_block(
 ## local parameter (pointer for editable methods, value for plain).
 function lower_method(ctx: ref[LoweringContext], c_name: str, receiver_ty: types.Type, m: ast.Method) -> ir.Function:
     ctx.locals.clear()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -1641,7 +1646,7 @@ public function lower_function(
     public_export: bool
 ) -> ir.Function:
     ctx.locals.clear()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -4704,12 +4709,12 @@ public function pw1_str(value: ptr_uint) -> str:
 # =============================================================================
 
 public function fresh_c_temp_name(ctx: ref[LoweringContext], prefix: str) -> str:
-    ctx.temp_counter += 1
+    ctx.counters.temp += 1
     var buf = string.String.create()
     buf.append("__mt_")
     buf.append(prefix)
     buf.append("_")
-    fmt.append_ptr_uint(ref_of(buf), ctx.temp_counter)
+    fmt.append_ptr_uint(ref_of(buf), ctx.counters.temp)
     return buf.as_str()
 
 
@@ -5519,7 +5524,7 @@ function build_capturing_invoke(
     captures: span[ProcCapture]
 ) -> ir.Function:
     let saved_locals = ctx.locals
-    let saved_counter = ctx.temp_counter
+    let saved_counter = ctx.counters.temp
     let saved_cps_ci = ctx.async_cps_active
     let saved_cps_ci_completion = ctx.async_completion_active
     let saved_ci_inside_async = ctx.inside_async
@@ -5531,7 +5536,7 @@ function build_capturing_invoke(
     ctx.async_completion_active = false
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -5618,7 +5623,7 @@ function build_capturing_invoke(
         bi += 1
 
     ctx.locals = saved_locals
-    ctx.temp_counter = saved_counter
+    ctx.counters.temp = saved_counter
     ctx.async_cps_active = saved_cps_ci
     ctx.async_completion_active = saved_cps_ci_completion
     ctx.inside_async = saved_ci_inside_async
@@ -5793,7 +5798,7 @@ function build_proc_invoke_fn(
     invoke_c_name: str
 ) -> ir.Function:
     let saved_locals = ctx.locals
-    let saved_counter = ctx.temp_counter
+    let saved_counter = ctx.counters.temp
     let saved_cps_pi = ctx.async_cps_active
     let saved_cps_pi_completion = ctx.async_completion_active
     let saved_pi_inside_async = ctx.inside_async
@@ -5804,7 +5809,7 @@ function build_proc_invoke_fn(
     ctx.async_completion_active = false
     ctx.inside_async = false
     ctx.locals = vec.Vec[LocalBinding].create()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -5833,7 +5838,7 @@ function build_proc_invoke_fn(
     let body_stmts = lower_function_body(ctx, body)
 
     ctx.locals = saved_locals
-    ctx.temp_counter = saved_counter
+    ctx.counters.temp = saved_counter
     ctx.async_cps_active = saved_cps_pi
     ctx.async_completion_active = saved_cps_pi_completion
     ctx.inside_async = saved_pi_inside_async
@@ -8936,7 +8941,7 @@ public function lower_and_cache_specialization_with_sub(
             var saved_foreign = ctx.foreign_map
             var saved_variants = ctx.variants
             var saved_locals = ctx.locals
-            var saved_counter = ctx.temp_counter
+            var saved_counter = ctx.counters.temp
             var saved_returns = ctx.function_returns
             var saved_type_subst = ctx.type_substitution
             var saved_inside_async = ctx.inside_async
@@ -8973,7 +8978,7 @@ public function lower_and_cache_specialization_with_sub(
                     pass
 
             ctx.locals = vec.Vec[LocalBinding].create()
-            ctx.temp_counter = 0
+            ctx.counters.temp = 0
             ctx.fmt_dest_name = ""
             ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
             ctx.fmt_counter_visible = false
@@ -9050,7 +9055,7 @@ public function lower_and_cache_specialization_with_sub(
             ctx.foreign_map = saved_foreign
             ctx.variants = saved_variants
             ctx.locals = saved_locals
-            ctx.temp_counter = saved_counter
+            ctx.counters.temp = saved_counter
             ctx.function_returns = saved_returns
             ctx.type_substitution = saved_type_subst
             ctx.inside_async = saved_inside_async
@@ -11753,7 +11758,7 @@ function ensure_monomorphized_method(
     var saved_foreign = ctx.foreign_map
     var saved_variants = ctx.variants
     var saved_locals = ctx.locals
-    var saved_counter = ctx.temp_counter
+    var saved_counter = ctx.counters.temp
     var saved_returns = ctx.function_returns
     var saved_sub = ctx.type_substitution
     var saved_inside_async = ctx.inside_async
@@ -11773,7 +11778,7 @@ function ensure_monomorphized_method(
     ctx.foreign_map = map_mod.Map[str, ForeignInfo].create()
     ctx.variants = map_mod.Map[str, VariantInfo].create()
     ctx.locals = vec.Vec[LocalBinding].create()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter = map_mod.Map[str, ptr_uint].create()
     ctx.fmt_counter_visible = false
@@ -11848,7 +11853,7 @@ function ensure_monomorphized_method(
     ctx.foreign_map = saved_foreign
     ctx.variants = saved_variants
     ctx.locals = saved_locals
-    ctx.temp_counter = saved_counter
+    ctx.counters.temp = saved_counter
     ctx.function_returns = saved_returns
     ctx.type_substitution = saved_sub
     ctx.inside_async = saved_inside_async
@@ -11887,7 +11892,7 @@ function lower_specialized_method(
 ) -> ir.Function:
     let m = gm.method
     ctx.locals.clear()
-    ctx.temp_counter = 0
+    ctx.counters.temp = 0
     ctx.fmt_dest_name = ""
     ctx.fmt_counter.clear()
     ctx.fmt_counter_visible = false
@@ -18149,7 +18154,7 @@ public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[as
         # cleanups, temp names and dynamic-format counters are restored, and
         # the real lowering below (in the call path) reproduces them once.
         let saved_setup = suspend_stmt_setup(ctx)
-        let saved_temp = ctx.temp_counter
+        let saved_temp = ctx.counters.temp
         let saved_fmt_dest = ctx.fmt_dest_name
         let saved_fmt_visible = ctx.fmt_counter_visible
         var saved_fmt_n: ptr_uint = 0
@@ -18158,7 +18163,7 @@ public function method_receiver_type(ctx: ref[LoweringContext], receiver: ptr[as
             saved_fmt_n = unsafe: read(saved_n_ptr)
         let lowered_ty = ir_expr_type(lower_expr(ctx, receiver))
         resume_stmt_setup(ctx, saved_setup)
-        ctx.temp_counter = saved_temp
+        ctx.counters.temp = saved_temp
         ctx.fmt_dest_name = saved_fmt_dest
         ctx.fmt_counter_visible = saved_fmt_visible
         ctx.fmt_counter.set(ctx.fmt_dest_name, saved_fmt_n)

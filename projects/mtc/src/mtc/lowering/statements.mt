@@ -804,8 +804,8 @@ function lower_while_stmt(ctx: ref[lowering.LoweringContext], output: ref[vec.Ve
                     let cond_ir = lowering.lower_expr(ctx, cond_hoisted)
                     let cond_collected = lowering.collect_stmt_setup(ctx, cond_saved)
                     lowering.emit_hoist_setup(ref_of(wbody), cond_base, cond_collected)
-                    ctx.async_tmp_counter += 1
-                    let cond_tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.async_tmp_counter))
+                    ctx.counters.async_tmp += 1
+                    let cond_tmp = strings.join_two("__mt_async_tmp_", lowering.pw1_str(ctx.counters.async_tmp))
                     let cond_field = strings.join_two("local_", cond_tmp)
                     let cond_frame = strings.join_two("__mt_frame->", cond_field)
                     var cond_name: str

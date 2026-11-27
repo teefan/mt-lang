@@ -1164,8 +1164,8 @@ function lower_variant_match_goto(
             pointer = Option[bool].some(value = false)
         ))
 
-    ctx.match_label_counter += 1
-    let m = ctx.match_label_counter
+    ctx.counters.match_label += 1
+    let m = ctx.counters.match_label
     let end_label = match_label_name(m, "end")
     let next_label = match_label_name(m, "arm_next")
 
