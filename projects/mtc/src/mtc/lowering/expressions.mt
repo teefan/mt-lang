@@ -847,8 +847,8 @@ public function lower_proc_expression_typed_named(
 
     var struct_fields = vec.Vec[ir.Field].create()
     struct_fields.push(ir.Field(name = "env", ty = void_ptr))
-    struct_fields.push(ir.Field(name = "invoke", ty = lowering.proc_invoke_field_type(proc_ty)))
-    let lifecycle_ty = lowering.proc_lifecycle_fn_type()
+    struct_fields.push(ir.Field(name = "invoke", ty = proc_mod.proc_invoke_field_type(proc_ty)))
+    let lifecycle_ty = proc_mod.proc_lifecycle_fn_type()
     struct_fields.push(ir.Field(name = "release", ty = lifecycle_ty))
     struct_fields.push(ir.Field(name = "retain", ty = lifecycle_ty))
     ctx.pending_proc_structs.push(ir.StructDecl(
@@ -963,9 +963,9 @@ public function lower_proc_expression_typed_named(
             var cri: ptr_uint = 0
             while cri < captures.len:
                 let cap = unsafe: read(captures.data + cri)
-                if lowering.contains_proc_storage_type(ctx, cap.ty):
+                if proc_mod.contains_proc_storage_type(ctx, cap.ty):
                     let member = lowering.alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-                    lowering.proc_contained_retain_stmts(ctx, member, cap.ty, ref_of(ctx.hoist.stmts))
+                    proc_mod.proc_contained_retain_stmts(ctx, member, cap.ty, ref_of(ctx.hoist.stmts))
                 cri += 1
             env_value = lowering.alloc_expr(ir.Expr.expr_cast(
                 target_type = void_ptr,
@@ -999,9 +999,9 @@ public function lower_proc_expression_typed_named(
     else:
         # No-capture path.  The host's synthetic-function order is invoke,
         # release, retain (`block.rb:155-157`).
-        ctx.pending_synthetic_functions.push(lowering.build_proc_invoke_fn(ctx, method_params, ret_ty, body_ptr, invoke_str))
-        ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(release_str))
-        ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(retain_str))
+        ctx.pending_synthetic_functions.push(proc_mod.build_proc_invoke_fn(ctx, method_params, ret_ty, body_ptr, invoke_str))
+        ctx.pending_synthetic_functions.push(proc_mod.build_proc_noop_fn(release_str))
+        ctx.pending_synthetic_functions.push(proc_mod.build_proc_noop_fn(retain_str))
         lowering.resume_stmt_setup(ctx, hoist_saved)
         env_value = lowering.alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))
 
@@ -1011,7 +1011,7 @@ public function lower_proc_expression_typed_named(
         name = "invoke",
         value = lowering.alloc_expr(ir.Expr.expr_name(
             name = invoke_str,
-            ty = lowering.proc_invoke_field_type(proc_ty),
+            ty = proc_mod.proc_invoke_field_type(proc_ty),
             pointer = Option[bool].some(value = false)
         ))
     ))
@@ -1034,7 +1034,7 @@ public function lower_proc_expression_typed_named(
     let literal = lowering.alloc_expr(ir.Expr.expr_aggregate_literal(ty = proc_ty, fields = fields.as_span()))
     if name_hint.len > 0:
         return literal
-    return lowering.materialize_proc_literal(ctx, literal, proc_ty)
+    return proc_mod.materialize_proc_literal(ctx, literal, proc_ty)
 
 
 ## Pack a single expression into a span.

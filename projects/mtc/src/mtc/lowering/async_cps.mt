@@ -20,6 +20,7 @@ import mtc.lowering.format as format
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.expressions as expr_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.proc as proc_mod
 import mtc.lowering.monomorphized as monomorphized
 import mtc.lowering.tasks as tasks
 import mtc.strings
@@ -912,26 +913,26 @@ function emit_async_vtable(
                 rp_is_ptr = ap.value
             Option.none:
                 pass
-        if not rp_is_ptr and lowering.contains_proc_storage_type(ctx, rpty):
+        if not rp_is_ptr and proc_mod.contains_proc_storage_type(ctx, rpty):
             let rp_field = lowering.alloc_expr(ir.Expr.expr_member(
                 receiver = frame_exp,
                 member = strings.join_two("param_", rpname),
                 ty = rpty
             ))
-            lowering.proc_nullable_release_stmts(ctx, rp_field, rpty, ref_of(vrel))
+            proc_mod.proc_nullable_release_stmts(ctx, rp_field, rpty, ref_of(vrel))
         rpi += 1
     var rli: ptr_uint = 0
     while rli < ctx.async_local_fields.len():
         let rlfp = ctx.async_local_fields.get(rli) else:
             break
         let rlf = unsafe: read(rlfp)
-        if lowering.contains_proc_storage_type(ctx, rlf.ty):
+        if proc_mod.contains_proc_storage_type(ctx, rlf.ty):
             let rl_field = lowering.alloc_expr(ir.Expr.expr_member(
                 receiver = frame_exp,
                 member = rlf.name,
                 ty = rlf.ty
             ))
-            lowering.proc_nullable_release_stmts(ctx, rl_field, rlf.ty, ref_of(vrel))
+            proc_mod.proc_nullable_release_stmts(ctx, rl_field, rlf.ty, ref_of(vrel))
         rli += 1
     # A dynamic format string stored in the frame is freed when the task is
     # released (`frame_builder.rb:472-481`).
@@ -1155,26 +1156,26 @@ function emit_async_cancel_fn(
                 cp_is_ptr = ap.value
             Option.none:
                 pass
-        if not cp_is_ptr and lowering.contains_proc_storage_type(ctx, cpty):
+        if not cp_is_ptr and proc_mod.contains_proc_storage_type(ctx, cpty):
             let cp_field = lowering.alloc_expr(ir.Expr.expr_member(
                 receiver = frame_exp,
                 member = strings.join_two("param_", cpname),
                 ty = cpty
             ))
-            lowering.proc_nullable_release_stmts(ctx, cp_field, cpty, ref_of(vcn))
+            proc_mod.proc_nullable_release_stmts(ctx, cp_field, cpty, ref_of(vcn))
         cpi += 1
     var cli: ptr_uint = 0
     while cli < ctx.async_local_fields.len():
         let clfp = ctx.async_local_fields.get(cli) else:
             break
         let clf = unsafe: read(clfp)
-        if lowering.contains_proc_storage_type(ctx, clf.ty):
+        if proc_mod.contains_proc_storage_type(ctx, clf.ty):
             let cl_field = lowering.alloc_expr(ir.Expr.expr_member(
                 receiver = frame_exp,
                 member = clf.name,
                 ty = clf.ty
             ))
-            lowering.proc_nullable_release_stmts(ctx, cl_field, clf.ty, ref_of(vcn))
+            proc_mod.proc_nullable_release_stmts(ctx, cl_field, clf.ty, ref_of(vcn))
         cli += 1
     # A dynamic format string stored in the frame is freed on cancel too
     # (`frame_builder.rb:566-575`).
@@ -1363,8 +1364,8 @@ function emit_async_constructor(
                 is_pointer_param = ap.value
             Option.none:
                 pass
-        if not is_pointer_param and lowering.contains_proc_storage_type(ctx, pty):
-            lowering.proc_contained_retain_stmts(ctx, field_expr, pty, ref_of(ctor_body))
+        if not is_pointer_param and proc_mod.contains_proc_storage_type(ctx, pty):
+            proc_mod.proc_contained_retain_stmts(ctx, field_expr, pty, ref_of(ctor_body))
         pi3 += 1
     ctor_body.push(ir.Stmt.stmt_expression(
         expression = lowering.alloc_expr(ir.Expr.expr_call(
@@ -2711,7 +2712,7 @@ public function build_async_main_entrypoint(ctx: ref[lowering.LoweringContext], 
         ))
 
     # Release the root proc: `root.release(root.env)`.
-    let lifecycle_ty = lowering.proc_lifecycle_fn_type()
+    let lifecycle_ty = proc_mod.proc_lifecycle_fn_type()
     let release_member = lowering.alloc_expr(ir.Expr.expr_member(
         receiver = root_ref,
         member = "release",

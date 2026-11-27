@@ -397,8 +397,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1214,
-    "duplicated_lines": 8339,
+    "windows": 1219,
+    "duplicated_lines": 8349,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -419,6 +419,7 @@
       "03a8f49062b996b89c78f8b7f5eb2aa0205c6b40",
       "040fdde90b55024137016c4c7daad9abaf5c917b",
       "044ac015b5c8fe7bc4b578e47bc995744bf4f93d",
+      "0460f7821b014a04ee09ee518276426226c55e3c",
       "04b71c5a3c284da76da4158a4cdc5186599ffcf4",
       "04e6a941bc01ad657ffd817a081d155bce885403",
       "052fa1880f5e638cd50a2652982002776f3c43b2",
@@ -542,6 +543,7 @@
       "1ffa902515355dd7bc162c3fcaaf75ac282fadb2",
       "206f1bbb2f3171a8d1c96145f79e107f51ae304d",
       "2077bbd2943da1500af18b1adc2720e6484916c4",
+      "2085f48f01f82250c649220f5b74652258071c12",
       "20eed026135b5b107f24a328cafcd52dddb5f3ff",
       "212c594025e7b2c78b65e751cd9dfbd2f90961a1",
       "21bc14de1f113468a94922567ebedcd61911f71a",
@@ -963,6 +965,7 @@
       "764402d600ff6dbbb2e470a45e492f3bd698cfac",
       "765099d52ca95bb76671470e31b2c5d8bd7a5b94",
       "7651f53b57c121264955eba48703e3a20c41d50a",
+      "7671f3db3350750fef9d73c279f8bc9b41ccc012",
       "769df03ba7ebbf4d2a13fb4a56599b58ada50855",
       "76b5f136415e0fa1af68c92cbf45ecfc64ae8fb3",
       "76b77054a69575382cb5aa7f7c6357e096e36035",
@@ -1078,6 +1081,7 @@
       "8e081bdeb9229ea739ce9000d71f7f0401dee71a",
       "8e7020bfbe63bbdd95cd6facbc3364d3617b3896",
       "8e9b7121302aaad688840e20ac9bb20770875c50",
+      "8eb262ca64fd4d01429466fcd51a3c67bb0243f2",
       "8f0a4f037ae5589e96f03225da9df80c6d9314bd",
       "8fcb983201f9f48eb5d94eed7c41fef07c64382e",
       "8ff111ae80e1e95e208ba7c863200a3c5ae18165",
@@ -1175,7 +1179,6 @@
       "a32c8bede1b83026458d8317cfb670518f0c7740",
       "a338ed3113f5855c53d98d3148b90d95189e6913",
       "a39d378123924a0a38c0cd413f97b85bb591c8cd",
-      "a3dea930c045570bd77731975c1d5fff10f6be86",
       "a45f416240c00c974b3148d3dc71371460c628ec",
       "a4ac2b36e827720a7897a53490b25e667cc96753",
       "a50bc5cef005c64a086002dafc213bcd5a447978",
@@ -1285,6 +1288,7 @@
       "babd93c89f6fee7c1e6d1e8f858f97a67e3a59f1",
       "baecd2d9ecc876e25d189e9fe0c36f04e02bb718",
       "bb0f254d42a753758c7a2a51382d6f746facc30d",
+      "bb272bd0520c8429fa2dd6cb4373eb52ff8b0e22",
       "bb889ff29999d9c5890e87643ac78d878806ff8b",
       "bba844fb493a0194e58bb68c14e5897a0c3944f3",
       "bbfa994716ac57841f5c446b2fb6f8e4709b5b13",
@@ -1568,6 +1572,7 @@
       "f65a2374d2c2884e3713182f1f255f35d2de476b",
       "f7813f804e84192d2b74caf26619d2030522c69d",
       "f7fe06b148d41de102d27d9732d9deff380aa98a",
+      "f832896cb5ecbbf5854ba25e7c231c8cebd806b0",
       "f843344127321335a45c1eef14bc6fc3fc302506",
       "f8458b1d1d406d3aab3f7f9e15f95f5b0cd5cb1e",
       "f8e29c90e6cbe83eff0d8399ddb5e1c3382e4bad",
@@ -1617,7 +1622,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148943,
+    "total_code": 148947,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1982,14 +1987,14 @@
         "max_function": 63
       },
       "projects/mtc/src/mtc/lowering/async_cps.mt": {
-        "lines": 2862,
-        "code": 2409,
+        "lines": 2863,
+        "code": 2410,
         "max_line": 126,
         "max_function": 372
       },
       "projects/mtc/src/mtc/lowering/calls.mt": {
-        "lines": 860,
-        "code": 678,
+        "lines": 861,
+        "code": 679,
         "max_line": 135,
         "max_function": 158
       },
@@ -2072,8 +2077,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 12679,
-        "code": 9466,
+        "lines": 12208,
+        "code": 9043,
         "max_line": 157,
         "max_function": 246
       },
@@ -2102,9 +2107,9 @@
         "max_function": 288
       },
       "projects/mtc/src/mtc/lowering/proc.mt": {
-        "lines": 774,
-        "code": 699,
-        "max_line": 129,
+        "lines": 1239,
+        "code": 1122,
+        "max_line": 154,
         "max_function": 132
       },
       "projects/mtc/src/mtc/lowering/proc_renumber.mt": {
@@ -2114,8 +2119,8 @@
         "max_function": 155
       },
       "projects/mtc/src/mtc/lowering/statements.mt": {
-        "lines": 1665,
-        "code": 1302,
+        "lines": 1666,
+        "code": 1303,
         "max_line": 154,
         "max_function": 207
       },
@@ -2138,8 +2143,8 @@
         "max_function": 192
       },
       "projects/mtc/src/mtc/lowering/type_resolution.mt": {
-        "lines": 575,
-        "code": 436,
+        "lines": 576,
+        "code": 437,
         "max_line": 117,
         "max_function": 120
       },

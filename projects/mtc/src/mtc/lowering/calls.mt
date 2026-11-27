@@ -24,6 +24,7 @@ import mtc.lowering.tasks as tasks
 import mtc.lowering.declarations as decl_mod
 import mtc.lowering.foreign as foreign_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.proc as proc_mod
 import mtc.lowering.member_access as member_mod
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.utils as utils
@@ -89,7 +90,7 @@ public function lower_call(
                     let invoke_field = lowering.alloc_expr(ir.Expr.expr_member(
                         receiver = callee_expr,
                         member = "invoke",
-                        ty = lowering.proc_invoke_field_type(callee_ty)
+                        ty = proc_mod.proc_invoke_field_type(callee_ty)
                     ))
                     return lowering.alloc_expr(ir.Expr.expr_call_indirect(
                         callee = invoke_field,

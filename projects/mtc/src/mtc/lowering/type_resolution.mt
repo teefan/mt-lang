@@ -13,6 +13,7 @@ import mtc.c_naming as naming
 import mtc.lowering.inline as inline_mod
 import mtc.lowering.comptime as comptime
 import mtc.lowering.lowering as lowering
+import mtc.lowering.proc as proc_mod
 import mtc.lowering.match as match_mod
 import mtc.lowering.monomorphized as monomorphized
 
@@ -72,7 +73,7 @@ public function resolve_type_ref(ctx: ref[lowering.LoweringContext], tp: ptr[ast
                     let opt_alias = resolve_single_imported_type(ctx, target_module, type_name)
                     match opt_alias:
                         Option.some as alias_ty:
-                            resolved = lowering.proc_alias_struct_type(ctx, alias_ty.value)
+                            resolved = proc_mod.proc_alias_struct_type(ctx, alias_ty.value)
                         Option.none:
                             resolved = types.imported_type(
                                 module_name = target_module,
@@ -117,7 +118,7 @@ public function resolve_type_ref(ctx: ref[lowering.LoweringContext], tp: ptr[ast
                 # module's qualified name.
                 var alias_target = ctx.analysis.type_alias_types.get(name)
                 if alias_target != null:
-                    resolved = lowering.proc_alias_struct_type(ctx, unsafe: read(alias_target))
+                    resolved = proc_mod.proc_alias_struct_type(ctx, unsafe: read(alias_target))
                 else:
                     match lowering.local_nested_type(ctx, t.name.parts):
                         Option.some as nested:
@@ -421,7 +422,7 @@ public function resolve_field_type_ref(ctx: ref[lowering.LoweringContext], tref:
             # `std.async.libuv_runtime.Runtime`), like `resolve_type_ref`.
             match resolve_single_imported_type(ctx, target_module, type_name):
                 Option.some as alias_ty:
-                    resolved = lowering.proc_alias_struct_type(ctx, alias_ty.value)
+                    resolved = proc_mod.proc_alias_struct_type(ctx, alias_ty.value)
                 Option.none:
                     resolved = types.imported_type(
                         module_name = target_module,

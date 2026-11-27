@@ -111,21 +111,21 @@ public function lower_fn_to_proc(
                 public_export = false,
                 method_receiver_param = false
             ))
-            ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(release_str))
-            ctx.pending_synthetic_functions.push(lowering.build_proc_noop_fn(retain_str))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(release_str))
+            ctx.pending_synthetic_functions.push(build_proc_noop_fn(retain_str))
 
             # Ensure the proc struct type exists for this signature.
             let proc_name = naming.proc_type_c_name(fn_ty)
             let proc_ty = lowering.proc_ensure_struct_decl(ctx, proc_name, fn_ty)
 
-            let lifecycle_ty = lowering.proc_lifecycle_fn_type()
+            let lifecycle_ty = proc_lifecycle_fn_type()
             var fields = vec.Vec[ir.AggregateField].create()
             fields.push(ir.AggregateField(name = "env", value = lowering.alloc_expr(ir.Expr.expr_null_literal(ty = void_ptr))))
             fields.push(ir.AggregateField(
                 name = "invoke",
                 value = lowering.alloc_expr(ir.Expr.expr_name(
                     name = invoke_str,
-                    ty = lowering.proc_invoke_field_type(fn_ty),
+                    ty = proc_invoke_field_type(fn_ty),
                     pointer = Option[bool].some(value = false)
                 ))
             ))
@@ -253,9 +253,9 @@ public function build_env_setup_fn(
     var cri2: ptr_uint = 0
     while cri2 < captures.len:
         let cap = unsafe: read(captures.data + cri2)
-        if lowering.contains_proc_storage_type(ctx, cap.ty):
+        if contains_proc_storage_type(ctx, cap.ty):
             let field = lowering.alloc_expr(ir.Expr.expr_member(receiver = env_ref, member = cap.name, ty = cap.ty))
-            lowering.proc_contained_retain_stmts(ctx, field, cap.ty, ref_of(body))
+            proc_contained_retain_stmts(ctx, field, cap.ty, ref_of(body))
         cri2 += 1
 
     # return env
@@ -578,14 +578,14 @@ public function build_capturing_release(
         var cap: lowering.ProcCapture
         unsafe:
             cap = read(captures.data + ci)
-        if lowering.contains_proc_storage_type(ctx, cap.ty):
+        if contains_proc_storage_type(ctx, cap.ty):
             let release_env = lowering.alloc_expr(ir.Expr.expr_name(
                 name = "__mt_proc_env_ptr",
                 ty = env_ptr_ty,
                 pointer = Option[bool].some(value = false)
             ))
             let capture_ref = lowering.alloc_expr(ir.Expr.expr_member(receiver = release_env, member = cap.name, ty = cap.ty))
-            lowering.proc_contained_release_stmts(ctx, capture_ref, cap.ty, ref_of(then_body))
+            proc_contained_release_stmts(ctx, capture_ref, cap.ty, ref_of(then_body))
         ci += 1
     let free_call = lowering.alloc_expr(ir.Expr.expr_call(
         callee = "mt_async_free",
@@ -772,3 +772,468 @@ public function proc_capture_visit_stmts(
         unsafe:
             proc_capture_visit_stmt(ctx, stmts.data + i, scopes, seen, captures)
         i += 1
+
+public function proc_alias_struct_type(ctx: ref[lowering.LoweringContext], target: types.Type) -> types.Type:
+    match target:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
+                return lowering.proc_ensure_struct_decl(ctx, naming.proc_type_c_name(target), target)
+        _:
+            pass
+    return target
+
+
+public function materialize_proc_literal(
+    ctx: ref[lowering.LoweringContext],
+    literal: ptr[ir.Expr],
+    proc_ty: types.Type
+) -> ptr[ir.Expr]:
+    if ctx.hoist.mode == lowering.HoistMode.hm_off:
+        return literal
+    let name = lowering.fresh_c_temp_name(ctx, "proc_expr")
+    ctx.hoist.stmts.push(ir.Stmt.stmt_local(
+        name = name,
+        linkage_name = name,
+        ty = proc_ty,
+        value = literal,
+        line = 0,
+        source_path = ""
+    ))
+    return lowering.alloc_expr(ir.Expr.expr_name(name = name, ty = proc_ty, pointer = Option[bool].some(value = false)))
+
+
+public function build_proc_invoke_fn(
+    ctx: ref[lowering.LoweringContext],
+    method_params: span[ast.Param],
+    ret_ty: types.Type,
+    body: ptr[ast.Stmt],
+    invoke_c_name: str
+) -> ir.Function:
+    let saved_locals = ctx.locals
+    let saved_counter = ctx.counters.temp
+    let saved_cps_pi = ctx.async_cps_active
+    let saved_cps_pi_completion = ctx.async_completion_active
+    let saved_pi_inside_async = ctx.inside_async
+    # See `build_capturing_invoke`: the proc body is synchronous and must not
+    # inherit the enclosing async function's CPS return state — nor its
+    # `inside_async`, which would wrap the returned value in a Task literal.
+    ctx.async_cps_active = false
+    ctx.async_completion_active = false
+    ctx.inside_async = false
+    ctx.locals = vec.Vec[lowering.LocalBinding].create()
+    ctx.counters.temp = 0
+    ctx.format_state.dest_name = ""
+    ctx.format_state.counter.clear()
+    ctx.format_state.counter_visible = false
+    ctx.format_state.cstr_backed.clear()
+
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(ctx.void_ty))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(
+        name = "env",
+        linkage_name = "__mt_proc_env",
+        ty = void_ptr,
+        pointer = Option[bool].some(value = false)
+    ))
+
+    var pi: ptr_uint = 0
+    while pi < method_params.len:
+        var p: ast.Param
+        unsafe:
+            p = read(method_params.data + pi)
+        let p_ty = lowering.resolve_field_type_ref(ctx, p.param_type)
+        let pc = utils.c_local_name(p.name)
+        params.push(ir.Param(name = p.name, linkage_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
+        ctx.locals.push(lowering.LocalBinding(name = p.name, c_name = pc, ty = p_ty, pointer = Option[bool].some(value = false)))
+        pi += 1
+
+    let body_stmts = lowering.lower_function_body(ctx, body)
+
+    ctx.locals = saved_locals
+    ctx.counters.temp = saved_counter
+    ctx.async_cps_active = saved_cps_pi
+    ctx.async_completion_active = saved_cps_pi_completion
+    ctx.inside_async = saved_pi_inside_async
+    return ir.Function(
+        source_module = Option[str].none,
+        name = invoke_c_name,
+        linkage_name = invoke_c_name,
+        params = params.as_span(),
+        return_type = ret_ty,
+        body = body_stmts,
+        entry_point = false, public_export = false,
+        method_receiver_param = false,
+    )
+
+
+public function build_proc_noop_fn(c_name: str) -> ir.Function:
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void")))
+    var params = vec.Vec[ir.Param].create()
+    params.push(ir.Param(
+        name = "env",
+        linkage_name = "__mt_proc_env",
+        ty = void_ptr,
+        pointer = Option[bool].some(value = false)
+    ))
+    var body = vec.Vec[ir.Stmt].create()
+    body.push(ir.Stmt.stmt_return(value = null, line = 0, source_path = ""))
+    return ir.Function(
+        source_module = Option[str].none,
+        name = c_name,
+        linkage_name = c_name,
+        params = params.as_span(),
+        return_type = types.primitive("void"),
+        body = body.as_span(),
+        entry_point = false,
+        public_export = false,
+        method_receiver_param = false
+    )
+
+
+public function proc_invoke_field_type(proc_ty: types.Type) -> types.Type:
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void")))
+    match proc_ty:
+        types.Type.ty_function as fn_ty:
+            let fn_ty_ft = unsafe: read(fn_ty.payload)
+            var all_params = vec.Vec[types.Type].create()
+            var all_names = vec.Vec[str].create()
+            all_params.push(void_ptr)
+            all_names.push("env")
+            var i: ptr_uint = 0
+            while i < fn_ty_ft.params.len:
+                unsafe:
+                    all_params.push(read(fn_ty_ft.params.data + i))
+                var pname = ""
+                if i < fn_ty_ft.param_names.len:
+                    unsafe:
+                        pname = read(fn_ty_ft.param_names.data + i)
+                all_names.push(pname)
+                i += 1
+            return types.function_type(
+                name = "",
+                params = all_params.as_span(),
+                return_type = fn_ty_ft.return_type,
+                variadic = false,
+                is_proc = false,
+                param_names = all_names.as_span()
+            )
+        _:
+            return types.Type.ty_error
+
+
+public function proc_lifecycle_fn_type() -> types.Type:
+    var params = vec.Vec[types.Type].create()
+    params.push(types.generic_type(name = "ptr", args = lowering.sp_type(types.Type.ty_primitive(name = "void"))))
+    return types.function_type(
+        name = "",
+        params = params.as_span(),
+        return_type = types.alloc_type(types.primitive("void")),
+        variadic = false,
+        is_proc = false,
+        param_names = lowering.sp_str("env")
+    )
+
+
+public function contains_proc_storage_type(ctx: ref[lowering.LoweringContext], t: types.Type) -> bool:
+    return contains_proc_storage_type_depth(ctx, t, 0)
+
+
+public function contains_proc_storage_type_depth(ctx: ref[lowering.LoweringContext], t: types.Type, depth: int) -> bool:
+    if depth > 12:
+        return false
+    match t:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            return fnt_ft.is_proc
+        types.Type.ty_nullable as nl:
+            return contains_proc_storage_type_depth(ctx, unsafe: read(nl.base), depth + 1)
+        types.Type.ty_imported:
+            match lowering.struct_fields_of(ctx, t):
+                Option.some as fields:
+                    var i: ptr_uint = 0
+                    while i < fields.value.len:
+                        unsafe:
+                            if contains_proc_storage_type_depth(ctx, read(fields.value.data + i).ty, depth + 1):
+                                return true
+                        i += 1
+                Option.none:
+                    pass
+            return false
+        types.Type.ty_named:
+            match lowering.struct_fields_of(ctx, t):
+                Option.some as fields:
+                    var i: ptr_uint = 0
+                    while i < fields.value.len:
+                        unsafe:
+                            if contains_proc_storage_type_depth(ctx, read(fields.value.data + i).ty, depth + 1):
+                                return true
+                        i += 1
+                Option.none:
+                    pass
+            return false
+        _:
+            return false
+
+
+public function proc_release_stmt(recv: ptr[ir.Expr]) -> ir.Stmt:
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void")))
+    let callee = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "release", ty = proc_lifecycle_fn_type()))
+    let env = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
+    return ir.Stmt.stmt_expression(
+        expression = lowering.alloc_expr(ir.Expr.expr_call_indirect(
+            callee = callee,
+            arguments = lowering.single_expr_span(env),
+            ty = types.primitive("void")
+        )),
+        line = 0,
+        source_path = ""
+    )
+
+
+public function proc_retain_stmt(recv: ptr[ir.Expr]) -> ir.Stmt:
+    let void_ptr = types.generic_type(name = "ptr", args = lowering.sp_type(types.primitive("void")))
+    let callee = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "retain", ty = proc_lifecycle_fn_type()))
+    let env = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "env", ty = void_ptr))
+    return ir.Stmt.stmt_expression(
+        expression = lowering.alloc_expr(ir.Expr.expr_call_indirect(
+            callee = callee,
+            arguments = lowering.single_expr_span(env),
+            ty = types.primitive("void")
+        )),
+        line = 0,
+        source_path = ""
+    )
+
+
+public function proc_contained_release_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]]
+) -> void:
+    match t:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
+                stmts.push(proc_release_stmt(recv))
+        types.Type.ty_imported:
+            proc_struct_field_release_stmts(ctx, recv, t, stmts, false)
+        types.Type.ty_named:
+            proc_struct_field_release_stmts(ctx, recv, t, stmts, false)
+        _:
+            pass
+
+
+public function proc_nullable_release_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]]
+) -> void:
+    match t:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
+                let invoke_ty = proc_invoke_field_type(t)
+                let cond = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = "invoke", ty = invoke_ty))
+                var body = vec.Vec[ir.Stmt].create()
+                body.push(proc_release_stmt(recv))
+                stmts.push(ir.Stmt.stmt_if(
+                    condition = cond,
+                    then_body = body.as_span(),
+                    else_body = Option[span[ir.Stmt]].none
+                ))
+        types.Type.ty_imported:
+            proc_struct_field_release_stmts(ctx, recv, t, stmts, true)
+        types.Type.ty_named:
+            proc_struct_field_release_stmts(ctx, recv, t, stmts, true)
+        _:
+            pass
+
+
+public function proc_struct_fields(ctx: ref[lowering.LoweringContext], t: types.Type) -> Option[span[ir.Field]]:
+    match t:
+        types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
+            if im_bp.args.len > 0:
+                let lookup_name = naming.qualified_c_name(
+                    im_bp.module_name,
+                    lowering.generic_struct_c_name(im_bp.name, im_bp.args)
+                )
+                let p = ctx.caches.generic_structs.get(lookup_name)
+                if p != null:
+                    return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
+        types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
+            let p = ctx.caches.generic_structs.get(n_np.name)
+            if p != null:
+                return Option[span[ir.Field]].some(value = unsafe: read(p).fields)
+        types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
+            if g_bp.args.len > 0:
+                let concrete = lowering.try_monomorphize_generic(ctx, g_bp.name, g_bp.args)
+                match concrete:
+                    types.Type.ty_named:
+                        return proc_struct_fields(ctx, concrete)
+                    types.Type.ty_imported:
+                        return proc_struct_fields(ctx, concrete)
+                    _:
+                        return Option[span[ir.Field]].none
+        _:
+            pass
+    match lowering.struct_fields_of(ctx, t):
+        Option.some as fields:
+            var result_fields = vec.Vec[ir.Field].create()
+            var i: ptr_uint = 0
+            while i < fields.value.len:
+                let f = unsafe: read(fields.value.data + i)
+                result_fields.push(ir.Field(name = f.name, ty = f.ty))
+                i += 1
+            return Option[span[ir.Field]].some(value = result_fields.as_span())
+        Option.none:
+            return Option[span[ir.Field]].none
+
+
+public function proc_struct_field_release_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]],
+    guarded: bool
+) -> void:
+    match proc_struct_fields(ctx, t):
+        Option.some as fields:
+            var i: ptr_uint = 0
+            while i < fields.value.len:
+                let f = unsafe: read(fields.value.data + i)
+                if contains_proc_storage_type(ctx, f.ty):
+                    let member = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = f.name, ty = f.ty))
+                    if guarded:
+                        proc_nullable_release_stmts(ctx, member, f.ty, stmts)
+                    else:
+                        proc_contained_release_stmts(ctx, member, f.ty, stmts)
+                i += 1
+        Option.none:
+            pass
+
+
+public function proc_contained_retain_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]]
+) -> void:
+    match t:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
+                stmts.push(proc_retain_stmt(recv))
+        types.Type.ty_imported:
+            proc_struct_field_retain_stmts(ctx, recv, t, stmts, Option[ptr[ast.Expr]].none)
+        types.Type.ty_named:
+            proc_struct_field_retain_stmts(ctx, recv, t, stmts, Option[ptr[ast.Expr]].none)
+        _:
+            pass
+
+
+public function proc_selective_retain_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    value_ast: ptr[ast.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]]
+) -> void:
+    match t:
+        types.Type.ty_function as fnt:
+            let fnt_ft = unsafe: read(fnt.payload)
+            if fnt_ft.is_proc:
+                if not proc_expr_contains_proc_expr(value_ast):
+                    stmts.push(proc_retain_stmt(recv))
+        types.Type.ty_imported:
+            proc_struct_field_retain_stmts(ctx, recv, t, stmts, Option[ptr[ast.Expr]].some(value = value_ast))
+        types.Type.ty_named:
+            proc_struct_field_retain_stmts(ctx, recv, t, stmts, Option[ptr[ast.Expr]].some(value = value_ast))
+        _:
+            pass
+
+
+public function proc_struct_field_retain_stmts(
+    ctx: ref[lowering.LoweringContext],
+    recv: ptr[ir.Expr],
+    t: types.Type,
+    stmts: ref[vec.Vec[ir.Stmt]],
+    value_ast: Option[ptr[ast.Expr]]
+) -> void:
+    match proc_struct_fields(ctx, t):
+        Option.some as fields:
+            var i: ptr_uint = 0
+            while i < fields.value.len:
+                let f = unsafe: read(fields.value.data + i)
+                if contains_proc_storage_type(ctx, f.ty):
+                    let member = lowering.alloc_expr(ir.Expr.expr_member(receiver = recv, member = f.name, ty = f.ty))
+                    var field_ast = value_ast
+                    match value_ast:
+                        Option.some as va:
+                            unsafe:
+                                match read(va.value):
+                                    ast.Expr.expr_call as c:
+                                        var ai: ptr_uint = 0
+                                        while ai < c.args.len:
+                                            var arg: ast.Argument
+                                            arg = read(c.args.data + ai)
+                                            match arg.arg_name:
+                                                Option.some as an:
+                                                    if an.value == f.name:
+                                                        field_ast = Option[ptr[ast.Expr]].some(value = arg.arg_value)
+                                                Option.none:
+                                                    pass
+                                            ai += 1
+                                    _:
+                                        pass
+                        Option.none:
+                            pass
+                    match field_ast:
+                        Option.some as fa:
+                            proc_selective_retain_stmts(ctx, member, fa.value, f.ty, stmts)
+                        Option.none:
+                            proc_contained_retain_stmts(ctx, member, f.ty, stmts)
+                i += 1
+        Option.none:
+            pass
+
+
+public function proc_expr_contains_proc_expr(ep: ptr[ast.Expr]) -> bool:
+    let e = ep
+    unsafe:
+        match read(e):
+            ast.Expr.expr_proc:
+                return true
+            ast.Expr.expr_member_access as m:
+                return proc_expr_contains_proc_expr(m.receiver)
+            ast.Expr.expr_index_access as ix:
+                return proc_expr_contains_proc_expr(ix.receiver) or proc_expr_contains_proc_expr(ix.index)
+            ast.Expr.expr_unary_op as u:
+                return proc_expr_contains_proc_expr(u.operand)
+            ast.Expr.expr_binary_op as b:
+                return proc_expr_contains_proc_expr(b.left) or proc_expr_contains_proc_expr(b.right)
+            ast.Expr.expr_if as f:
+                return proc_expr_contains_proc_expr(f.condition) or proc_expr_contains_proc_expr(f.then_expr) or proc_expr_contains_proc_expr(f.else_expr)
+            ast.Expr.expr_unsafe as s:
+                return proc_expr_contains_proc_expr(s.expression)
+            ast.Expr.expr_await as aw:
+                return proc_expr_contains_proc_expr(aw.expression)
+            ast.Expr.expr_call as c:
+                if proc_expr_contains_proc_expr(c.callee):
+                    return true
+                var i: ptr_uint = 0
+                while i < c.args.len:
+                    unsafe:
+                        if proc_expr_contains_proc_expr(read(c.args.data + i).arg_value):
+                            return true
+                    i += 1
+                return false
+            ast.Expr.expr_specialization as sp:
+                return proc_expr_contains_proc_expr(sp.callee)
+            _:
+                return false

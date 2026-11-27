@@ -161,10 +161,16 @@ Dir.mktmpdir("mtc-watch-gate-") do |dir|
       value = iteration + 3
       File.write(lib, "public function value() -> int:\n    return #{value}\n")
       expected_builds += 1
+      # A build can observe a subsequent edit and schedule an extra rebuild, so
+      # a monotonic ready count can be ahead of the value just written.  Poll
+      # the atomic output until it carries the expected value.
+      out = ""
+      err = ""
+      status = nil
       wait_until(30, "soak rebuild #{iteration + 1}") do
-        File.read(log_path).scan("watch: ready").length >= expected_builds
+        out, err, status = run_binary(app)
+        status == 20 + value
       end
-      out, err, status = run_binary(app)
       unless out.empty? && status == 20 + value
         failures << "soak #{iteration + 1} #{out.inspect}/#{status} expected #{20 + value} (stderr=#{err.inspect})"
         break

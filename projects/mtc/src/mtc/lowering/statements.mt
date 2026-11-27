@@ -14,6 +14,7 @@ import mtc.lowering.format as format
 import mtc.lowering.inline as inline_mod
 import mtc.lowering.foreign as foreign_mod
 import mtc.lowering.lowering as lowering
+import mtc.lowering.proc as proc_mod
 import mtc.lowering.type_helpers as type_helpers
 import mtc.lowering.match as match_mod
 import mtc.lowering.parallel as parallel_mod
@@ -187,10 +188,10 @@ public function lower_return_stmt(ctx: ref[lowering.LoweringContext], output: re
                 # (whose proc releases would otherwise free it) when it is not a
                 # fresh literal — the host's `needs_proc_retain` rule
                 # (`block.rb:503-509`).
-                let ret_needs_proc_retain = lowering.has_pending_defers(ctx) and lowering.contains_proc_storage_type(
+                let ret_needs_proc_retain = lowering.has_pending_defers(ctx) and proc_mod.contains_proc_storage_type(
                     ctx,
                     ctx.current_fn_return_type
-                ) and not lowering.proc_expr_contains_proc_expr(value)
+                ) and not proc_mod.proc_expr_contains_proc_expr(value)
                 if ((ret_cleanups.len > 0 or lowering.has_pending_defers(ctx)) and not lowering.cleanup_safe_return_expr(value)) or ret_needs_proc_retain:
                     # The host's hoist declares the temp with the *function's*
                     # return type (`block.rb:508`), not the value's own type
@@ -215,7 +216,7 @@ public function lower_return_stmt(ctx: ref[lowering.LoweringContext], output: re
                         pointer = Option[bool].some(value = false)
                     ))
                     if ret_needs_proc_retain:
-                        lowering.proc_contained_retain_stmts(ctx, rref, ret_ty, output)
+                        proc_mod.proc_contained_retain_stmts(ctx, rref, ret_ty, output)
                     lowering.append_cleanup_stmts(output, ret_cleanups)
                     lowering.flush_all_defers(ctx, output)
                     output.push(ir.Stmt.stmt_return(
@@ -549,17 +550,17 @@ public function lower_plain_local_stmt(
                 # defer at every scope exit (guarded, for a zero-initialized var
                 # too), and a non-fresh initializer is retained for the new owner
                 # (the host's `local_defers` + selective retain, `block.rb:824-830`).
-                if lowering.contains_proc_storage_type(ctx, ty):
+                if proc_mod.contains_proc_storage_type(ctx, ty):
                     let proc_local_ref = lowering.alloc_expr(ir.Expr.expr_name(
                         name = c_name,
                         ty = ty,
                         pointer = Option[bool].some(value = false)
                     ))
                     var proc_release_body = vec.Vec[ir.Stmt].create()
-                    lowering.proc_nullable_release_stmts(ctx, proc_local_ref, ty, ref_of(proc_release_body))
+                    proc_mod.proc_nullable_release_stmts(ctx, proc_local_ref, ty, ref_of(proc_release_body))
                     lowering.record_defer(ctx, proc_release_body.as_span())
-                    if init != null and not lowering.proc_expr_contains_proc_expr(ptr[ast.Expr]<-init):
-                        lowering.proc_contained_retain_stmts(ctx, proc_local_ref, ty, output)
+                    if init != null and not proc_mod.proc_expr_contains_proc_expr(ptr[ast.Expr]<-init):
+                        proc_mod.proc_contained_retain_stmts(ctx, proc_local_ref, ty, output)
             _:
                 pass
 
@@ -734,7 +735,7 @@ function lower_assignment_stmt(ctx: ref[lowering.LoweringContext], output: ref[v
                 # A proc-containing target's assignment owns a reference: retain a
                 # non-fresh RHS, release the old value, then store through a temp
                 # (the host's `proc_assign` shape, `block.rb:583-590`).
-                if asg.operator == "=" and lowering.contains_proc_storage_type(ctx, target_ty):
+                if asg.operator == "=" and proc_mod.contains_proc_storage_type(ctx, target_ty):
                     let rhs_temp = lowering.fresh_c_temp_name(ctx, "proc_assign")
                     let rhs_c = utils.c_local_name(rhs_temp)
                     output.push(ir.Stmt.stmt_local(
@@ -750,8 +751,8 @@ function lower_assignment_stmt(ctx: ref[lowering.LoweringContext], output: ref[v
                         ty = target_ty,
                         pointer = Option[bool].some(value = false)
                     ))
-                    lowering.proc_selective_retain_stmts(ctx, rhs_ref, asg.value, target_ty, output)
-                    lowering.proc_nullable_release_stmts(ctx, target, target_ty, output)
+                    proc_mod.proc_selective_retain_stmts(ctx, rhs_ref, asg.value, target_ty, output)
+                    proc_mod.proc_nullable_release_stmts(ctx, target, target_ty, output)
                     output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = rhs_ref))
                 else:
                     output.push(ir.Stmt.stmt_assignment(target = target, operator = asg.operator, value = value))
