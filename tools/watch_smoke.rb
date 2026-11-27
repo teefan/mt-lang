@@ -120,7 +120,7 @@ Dir.mktmpdir("mtc-watch-gate-") do |dir|
     # Leaf edit: only lib and its dependent main re-analyze.
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     File.write(lib, "public function value() -> int:\n    return 2\n")
-    wait_until(30, "leaf rebuild") { File.read(log_path).scan("built ").length >= 2 }
+    wait_until(30, "leaf rebuild") { File.read(log_path).scan("watch: ready").length >= 2 }
     leaf_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
     out, err, status = run_binary(app)
     failures << "leaf run #{out.inspect}/#{status} expected 12 (stderr=#{err.inspect})" unless out.empty? && status == 12
@@ -135,7 +135,7 @@ Dir.mktmpdir("mtc-watch-gate-") do |dir|
 
     # Core edit: an imported module outside the leaf changes.
     File.write(core, "public function base() -> int:\n    return 20\n")
-    wait_until(30, "core rebuild") { File.read(log_path).scan("built ").length >= 3 }
+    wait_until(30, "core rebuild") { File.read(log_path).scan("watch: ready").length >= 3 }
     out, err, status = run_binary(app)
     failures << "core run #{out.inspect}/#{status} expected 22 (stderr=#{err.inspect})" unless out.empty? && status == 22
     core_cache = last_cache_counts(File.read(log_path))
@@ -146,7 +146,7 @@ Dir.mktmpdir("mtc-watch-gate-") do |dir|
     # No-op save: metadata changes, content does not.  The cache must not re-parse
     # or re-analyze, and every object must come from the object cache.
     File.write(lib, "public function value() -> int:\n    return 2\n")
-    wait_until(30, "no-op rebuild") { File.read(log_path).scan("built ").length >= 4 }
+    wait_until(30, "no-op rebuild") { File.read(log_path).scan("watch: ready").length >= 4 }
     out, err, status = run_binary(app)
     failures << "no-op run #{out.inspect}/#{status} expected 22 (stderr=#{err.inspect})" unless out.empty? && status == 22
     noop_cache = last_cache_counts(File.read(log_path))
@@ -162,7 +162,7 @@ Dir.mktmpdir("mtc-watch-gate-") do |dir|
       File.write(lib, "public function value() -> int:\n    return #{value}\n")
       expected_builds += 1
       wait_until(30, "soak rebuild #{iteration + 1}") do
-        File.read(log_path).scan("built ").length >= expected_builds
+        File.read(log_path).scan("watch: ready").length >= expected_builds
       end
       out, err, status = run_binary(app)
       unless out.empty? && status == 20 + value

@@ -596,6 +596,8 @@ function watch_build_atomic(
         return false
     match fs.rename(temporary_output, final_output):
         Result.success:
+            if not main.cli_is_quiet():
+                stdio.print_format(c"watch: ready %.*s\n", int<-final_output.len, final_output.data)
             return true
         Result.failure as rename_failure:
             var error = rename_failure.error
