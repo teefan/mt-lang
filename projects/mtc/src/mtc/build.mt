@@ -1301,7 +1301,7 @@ function collect_binding_flags(program: loader.Program, roots: span[str]) -> vec
             uses_rpng = true
         if analysis.module_name == "std.c.cgltf":
             uses_cgltf = true
-        if is_libuv_support_module(analysis.module_name):
+        if is_libuv_support_module(analysis.module_name) or analysis.uses_parallel_for:
             uses_libuv = true
         mi += 1
 
@@ -1516,6 +1516,14 @@ function is_libuv_support_module(name: str) -> bool:
 
 
 function uses_libuv_support(program: loader.Program) -> bool:
+    var mi: ptr_uint = 0
+    while mi < program.analyses.len():
+        let a_ptr = program.analyses.get(mi) else:
+            break
+        unsafe:
+            if read(a_ptr).uses_parallel_for:
+                return true
+        mi += 1
     if uses_binding_module(program, "std.c.libuv"):
         return true
     if uses_binding_module(program, "std.c.fs"):

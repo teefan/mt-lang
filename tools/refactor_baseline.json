@@ -1623,7 +1623,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148969,
+    "total_code": 148977,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1670,8 +1670,8 @@
         "max_function": 18
       },
       "projects/mtc/src/mtc/build.mt": {
-        "lines": 2697,
-        "code": 2231,
+        "lines": 2705,
+        "code": 2239,
         "max_line": 121,
         "max_function": 218
       },
@@ -2084,7 +2084,7 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 11823,
+        "lines": 11822,
         "code": 8713,
         "max_line": 157,
         "max_function": 162

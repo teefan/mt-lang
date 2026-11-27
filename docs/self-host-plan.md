@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-193-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-194-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,14 +112,14 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 193, 2026-11-26)
+## Status at a glance (session 194, 2026-11-26)
 
 | Area | State |
 | --- | --- |
 | Compiler | **native self-host only**; the release is **0.7.0** (tag `v0.7.0`); the Ruby host is archived at tag `archive/host-ruby-0.4.26`, and `lib/`, the Ruby `test/**` suite, `milk_tea.gemspec`, `Rakefile`, `Gemfile` and `bin/mtc` are removed (session 143).  The source tree pins **Box2D 3.2.0** (session 158), and the 0.7.0 archive and seed carry it |
 | Bootstrap fixed point | **holds** from the **0.7.0** seed (`stage2.c == stage3.c`, session 193); self-test suite **23 files / 0 failed**; `build/stage2/mtc test test/mt -I .` **106 / 0**; the shim proof is session 145 (a `ruby` shim that exits 127 is never invoked) |
-| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`46d155de…`, release 0.7.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
-| Release archive | **3.60 MiB deterministic tar.gz** (`mtc-0.7.0-linux-x86_64`, `2a5aa8df…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.7.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
+| Bootstrap stage0 | **committed seed only**, `vendor/bootstrap/linux-x86_64/mtc` + `mtc.sha256` (`733b73fc…`, release 0.7.0); `--bootstrap PATH`/`$MTC_BOOTSTRAP` override; `--allow-ruby-host` is gone |
+| Release archive | **3.60 MiB deterministic tar.gz** (`mtc-0.7.0-linux-x86_64`, `e1c4bc2f…`), checksummed beside the archive; identical across two packagings; clean-path and clean-container (Ubuntu 24.04) smokes green; includes `install.sh` (versioned prefix + `current` symlink) and `config/`; tagged `v0.7.0`; the version is the authored `cli_help.VERSION`.  The archive and seed carry Box2D 3.2.0 |
 | Release runtime | Linux x86_64: **glibc ≥ 2.38, zlib, OpenSSL 3**; libuv is linked statically; `tools/release_container_smoke.sh` verifies the archive in a clean Ubuntu 24.04 image; the seed has the same requirements |
 | Analyzer/IR memory | `check main.mt` **413 MiB / 4.9 s**; `lower main.mt` **756 MiB / 10.5 s**; `emit-c main.mt` **860 MiB / 12.3 s**; `build projects/mtc` **903 MiB / 25.9 s** (session 152; `peak_rss.py` reports **KiB** — the MiB figures are that value ÷ 1024).  Path: `Type` boxed 72 → 24 B (session 150), the analyzer's tooling-only `imported_type_members` gated behind `tooling_facts` (−20% on `check`), the IR dump streamed and written straight into one buffer (−66 MiB on `lower`, session 151), `reserve_exact` for known-length vectors and string builders (−42 MiB on `lower`/`emit-c`, session 152), then the emitter's per-generation tables and scratch released at the end of `generate_c` (−9 MiB on `emit-c`, −21 MiB on `build --keep-c`, and ~94 → ~82 MiB per repeated emission; session 153).  The old analyzer const blow-up (**9,228 MiB** on `main.mt`, session 142) and the cross-module async rescan (682 MB of the lower peak, session 149) are gone.  `lowering.mt` check **197 MiB** (session 151 audit).  The release profile has the same peaks with `check` **1.3 s**, `lower` **4.1 s**, `emit-c` **4.6 s**, `build` **20.0 s** (session 155).  All tooling fan-out is capped at **4**. |
 | Multi-file commands | **Flat in the file count, and no longer ~2× a heavy file's peak** (session 152).  The per-file heap region is a bump allocator: it frees everything at once and cannot reuse anything released inside it, so an abandoned temporary lands in the peak.  It buys release of every file *after* the one compiling, so it is now gated on the **file count** (`should_scope_file`, `remaining_after >= 2`): the last two files of a run compile unregioned.  Measured: `check main.mt` + a 60-byte file **422 MiB** (was 958,616 KiB always-regioned; 432,068 never-regioned), 40 small files **372 MiB** (1,367,120 never-regioned), `check projects/mtc` (191 files) **997 MiB** (11,398,120 never-regioned).  The `lower`/`emit-c` 8-heaviest sets pay 2–3% (**1,456 / 1,694 MiB**) because their last two files are heavy.  The old session-151 row (same file twice 946 MiB, `main.mt` + `sexpr.mt` 1,407 MiB) was the ungated region; see *Region gate (session 152)*. |
@@ -141,7 +141,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 184 files / 148,969 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,349 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
+| **Refactoring safety** | structural guard: 184 files / 148,977 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **28 unused + 7 test-only** public declarations; 8,349 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -7079,16 +7079,37 @@ plus the completed Wave 4 lowering split.
 
 - `tools/release.sh --version 0.7.0 --refresh-seed` built the release
   stage2 and `dist/mtc-0.7.0-linux-x86_64.tar.gz`
-  (**3,770,823 B**, sha256 `2a5aa8df50c7dedbcae407b9a1e340df4bc9f29512612db9570637277711d8aa`).
+  (**3,771,803 B**, sha256 `e1c4bc2fe891df25c09459910af35ccb95d27c94f9248b5b5f3ee0c517a7c528`).
 - The clean-path release smoke passed (`mtc 0.7.0`).
 - The seed is now `vendor/bootstrap/linux-x86_64/mtc`
-  (**6,208,680 B**, sha256 `46d155def4eac5beb63e05f7ff287fba0da36e4d2d20767f30306a9410504280`).
+  (**6,208,736 B**, sha256 `733b73fc6513fc7b731090340f70f8622099d4b4837755b8832d7863768ae1c8`).
 - Full bootstrap from the new seed: stage2 == stage3, self-test build,
   **23 files / 0 failed**.
 
 **Release gate.** Compiler-core, oracles, examples, docs, LSP, bindings, and
 the clean-container smoke run in CI on the release commit; the GitHub release
 is published only after those checks are green.
+
+### Session 194 — 0.7.0 CI fix: parallel-for libuv
+
+The first 0.7.0 CI run failed `conformance/concurrency/parallel_for`: the
+generated C includes `uv.h`, but `build.mt` added the vendored libuv include
+and archive only for explicit libuv bindings.  The local host masked it with
+a system `/usr/include/uv.h`; the CI runner has none.
+
+- `analysis.uses_parallel_for` now marks `uses_libuv` and
+  `uses_libuv_support(program)`, so parallel-for builds get
+  `-I third_party/libuv-upstream/include`, the vendored libuv archive, and
+  the expected `-luv`.
+- Rebuilt the release and seed after the fix:
+  archive **3,771,803 B**, sha256 `e1c4bc2f…`; seed **6,208,736 B**,
+  sha256 `733b73fc…`.
+- Local compiler-core gate: dev + IR verify 23/0; bootstrap fixed point;
+  test/mt 106/0; strict 0; conformance 22/22; split full; watch 100 cycles;
+  CLI 231/231; diagnostics/lint 0 differ; examples 311/311.  Structural
+  baseline refreshed at 184 files / 148,977 code lines (+8).
+
+CI must be green on this fix before `v0.7.0` is tagged and published.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 
