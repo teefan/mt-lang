@@ -254,6 +254,7 @@
     "lowering.tasks": "tasks",
     "lowering.type_helpers": "type_helpers",
     "lowering.type_qualification": "type_qual_mod",
+    "lowering.type_resolution": "type_res_mod",
     "lowering.utils": "utils",
     "lsp.call_hierarchy": "call_hier",
     "lsp.code_actions": "code_actions",
@@ -1631,7 +1632,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148856,
+    "total_code": 148886,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2080,8 +2081,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 15274,
-        "code": 11673,
+        "lines": 14775,
+        "code": 11267,
         "max_line": 156,
         "max_function": 246
       },
@@ -2138,6 +2139,12 @@
         "code": 146,
         "max_line": 124,
         "max_function": 192
+      },
+      "projects/mtc/src/mtc/lowering/type_resolution.mt": {
+        "lines": 575,
+        "code": 436,
+        "max_line": 117,
+        "max_function": 120
       },
       "projects/mtc/src/mtc/lowering/utils.mt": {
         "lines": 190,
