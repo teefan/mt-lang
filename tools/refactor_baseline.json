@@ -236,6 +236,7 @@
     "lowering.comptime_types": "comptime_types",
     "lowering.const_eval": "const_eval",
     "lowering.control_flow": "control_flow",
+    "lowering.declarations": "decl_mod",
     "lowering.events": "events_mod",
     "lowering.expressions": "expr_mod",
     "lowering.format": "format",
@@ -1636,7 +1637,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148747,
+    "total_code": 148766,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2036,6 +2037,12 @@
         "max_line": 120,
         "max_function": 216
       },
+      "projects/mtc/src/mtc/lowering/declarations.mt": {
+        "lines": 265,
+        "code": 213,
+        "max_line": 126,
+        "max_function": 86
+      },
       "projects/mtc/src/mtc/lowering/events.mt": {
         "lines": 2181,
         "code": 1922,
@@ -2073,8 +2080,8 @@
         "max_function": 87
       },
       "projects/mtc/src/mtc/lowering/lowering.mt": {
-        "lines": 16840,
-        "code": 12893,
+        "lines": 16605,
+        "code": 12698,
         "max_line": 156,
         "max_function": 246
       },
@@ -2091,8 +2098,8 @@
         "max_function": 271
       },
       "projects/mtc/src/mtc/lowering/monomorphized.mt": {
-        "lines": 1660,
-        "code": 1369,
+        "lines": 1661,
+        "code": 1370,
         "max_line": 323,
         "max_function": 229
       },

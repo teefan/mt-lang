@@ -21,6 +21,7 @@ import mtc.lowering.comptime_types as comptime_types
 import mtc.lowering.const_eval as const_eval
 import mtc.lowering.include_scan as include_scan
 import mtc.lowering.events as events_mod
+import mtc.lowering.declarations as decl_mod
 import mtc.lowering.lowering as lowering
 import mtc.lowering.tasks as tasks
 import mtc.lowering.type_helpers as type_helpers
@@ -1126,7 +1127,7 @@ public function lower_module(
                     if vr.type_params.len == 0:
                         variants.push(lowering.lower_variant_decl(ref_of(ctx), vr.name, vr.variant_arms))
                 ast.Decl.decl_extending_block as ex:
-                    lowering.lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
+                    decl_mod.lower_extending_block(ctx, ref_of(functions), ex.type_name, ex.methods)
                 ast.Decl.decl_var as v:
                     lower_module_var_decl(ref_of(ctx), d, ref_of(globals))
                 ast.Decl.decl_const as c:
@@ -1288,7 +1289,7 @@ function lower_module_function_decl(
                         Option.none:
                             pass
             else if lowerable_function(fun.type_params, fun.body):
-                functions.push(lowering.lower_function(
+                functions.push(decl_mod.lower_function(
                     ctx,
                     fun.name,
                     fun.method_params,
