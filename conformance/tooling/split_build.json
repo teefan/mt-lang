@@ -1,0 +1,6 @@
+{
+  "mode": "run",
+  "build_args": ["--split"],
+  "stdout": "",
+  "exit": 0
+}

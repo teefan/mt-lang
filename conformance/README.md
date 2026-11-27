@@ -11,6 +11,9 @@ Rules:
   update mode** in `tools/conformance.rb`; changing an expectation is a reviewed
   language/spec decision.
 - Run cases compare exact stdout, exit status, and optional stderr substrings.
+  `build_args` passes extra build options (for example `--split` or
+  `--verify-ir`).
+- Verify-IR cases run `lower --verify-ir` and require a zero exit status.
 - Check cases compare the exact number of `error[...]` diagnostics, plus their
   code and message substring; `line`/`column` are checked when present.
 - `strict: true` runs/builds with `--strict-types`; strict warnings never

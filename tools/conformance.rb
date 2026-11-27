@@ -27,6 +27,9 @@
 # Run cases may set "strict": true to build with `--strict-types`; warnings do
 # not fail the build, but a strict warning is reported by the case output checks
 # only when explicitly requested with "stderr_contains".
+#
+# Run cases may also set "build_args": ["--split", ...] to pass build options.
+# Verify-IR cases run `lower --verify-ir` and require a zero exit status.
 
 require "json"
 require "open3"
@@ -102,7 +105,19 @@ cases.each do |source|
   end
 
   mode = spec.fetch("mode", "run")
-  if mode == "check"
+  if mode == "verify-ir"
+    out, err, status = capture(self_bin, "lower", source, "-I", ROOT, "--verify-ir")
+    unless status.success?
+      fail_case(failures, name, "verify-ir failed:\n#{(out + err).lines.last(12).join}")
+      next
+    end
+    spec.fetch("stderr_contains", []).each do |needle|
+      unless err.include?(needle)
+        fail_case(failures, name, "stderr does not contain #{needle.inspect}")
+        break
+      end
+    end
+  elsif mode == "check"
     args = [self_bin, "check", source, "-I", ROOT]
     args << "--strict-types" if spec["strict"]
     out, err, status = capture(*args)
@@ -157,6 +172,7 @@ cases.each do |source|
       binary = File.join(dir, "case")
       build_args = [self_bin, "build", source, "-I", ROOT, "-o", binary, "--no-cache"]
       build_args << "--strict-types" if spec["strict"]
+      build_args.concat(spec.fetch("build_args", []))
       bout, berr, bstatus = capture(*build_args)
       unless bstatus.success?
         fail_case(failures, name, "build failed:\n#{(bout + berr).lines.last(12).join}")
