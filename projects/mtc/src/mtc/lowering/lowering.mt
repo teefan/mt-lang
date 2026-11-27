@@ -189,18 +189,6 @@ struct SimpleCallee:
 ## recurses through: a member access is itself, a call or prefix cast unwraps
 ## to its callee.  None for a bare identifier (a same-module target has no
 ## receiver to resolve).
-public function simple_mapping_callee(mapping: ptr[ast.Expr]) -> Option[SimpleCallee]:
-    unsafe:
-        match read(mapping):
-            ast.Expr.expr_member_access as ma:
-                return Option[SimpleCallee].some(value = SimpleCallee(receiver = ma.receiver, name = ma.member_name))
-            ast.Expr.expr_prefix_cast as pc:
-                return simple_mapping_callee(pc.expression)
-            ast.Expr.expr_call as call:
-                return simple_mapping_callee(call.callee)
-            _:
-                return Option[SimpleCallee].none
-
 ## One arm of a variant, as needed by lowering: its name, payload field names and
 ## resolved types (empty for a no-payload arm).  The discriminant index is the
 ## arm's position in the owning `VariantInfo.arms`.
@@ -11026,87 +11014,6 @@ public function materialize_foreign_expr(ctx: ref[LoweringContext], result: ptr[
 ## consuming modes arrive later.
 
 
-public function append_foreign_consuming_releases(
-    ctx: ref[LoweringContext],
-    output: ref[vec.Vec[ir.Stmt]],
-    ep: ptr[ast.Expr]
-) -> void:
-    var info_opt = Option[ForeignInfo].none
-    var call_args = span[ast.Argument]()
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as call:
-                call_args = call.args
-                match read(call.callee):
-                    ast.Expr.expr_identifier as id:
-                        let fp = ctx.foreign_map.get(id.name)
-                        if fp != null:
-                            info_opt = Option[ForeignInfo].some(value = read(fp))
-                    ast.Expr.expr_member_access as ma:
-                        match read(ma.receiver):
-                            ast.Expr.expr_identifier as rid:
-                                let mod_ptr = ctx.analysis.imports.get(rid.name)
-                                if mod_ptr != null:
-                                    info_opt = imported_foreign_call(ctx, read(mod_ptr), ma.member_name)
-                            _:
-                                pass
-                    _:
-                        pass
-            _:
-                pass
-    let info = info_opt else:
-        return
-    var refinements = map_mod.Map[str, types.Type].create()
-    var i: ptr_uint = 0
-    while i < info.params.len and i < call_args.len:
-        var param: ast.ForeignParam
-        var arg: ast.Argument
-        unsafe:
-            param = read(info.params.data + i)
-            arg = read(call_args.data + i)
-        if param.param_mode == ast.ForeignParamMode.fmode_consuming:
-            unsafe:
-                match read(arg.arg_value):
-                    ast.Expr.expr_identifier as aid:
-                        match type_helpers.find_local_binding(ctx, aid.name):
-                            Option.some as lb:
-                                let b = lb.value
-                                # The binding's *storage* type: a guard-bound
-                                # pointer binding stores the full nullable in its
-                                # c_name (projection-carried); option/result
-                                # storages cannot satisfy a consuming pointer.
-                                var storage_ty = types.primitive("void")
-                                match b.projection:
-                                    BindingProjection.plain:
-                                        storage_ty = b.ty
-                                    BindingProjection.nullable_storage as st:
-                                        storage_ty = st.storage_ty
-                                    _:
-                                        pass
-                                if types.is_nullable_type(storage_ty):
-                                    let base = types.unwrap_nullable(storage_ty)
-                                    let param_ty = foreign_mod.foreign_param_context_type(ctx, info, param)
-                                    if types.type_equals(base, param_ty):
-                                        let target = alloc_expr(ir.Expr.expr_name(
-                                            name = b.c_name,
-                                            ty = storage_ty,
-                                            pointer = b.pointer
-                                        ))
-                                        output.push(ir.Stmt.stmt_assignment(
-                                            target = target,
-                                            operator = "=",
-                                            value = alloc_expr(ir.Expr.expr_null_literal(ty = storage_ty)),
-                                        ))
-                                        refinements.set(aid.name, types.Type.ty_null(target = null))
-                            Option.none:
-                                pass
-                    _:
-                        pass
-        i += 1
-    if refinements.len() > 0:
-        let _post = type_helpers.push_flow_refinements(ctx, ref_of(refinements))
-
-
 ## True when a lowered IR expression is a call to the malloc-backed
 ## `mt_foreign_str_to_cstr_temp` helper (a dynamic `str as cstr` foreign
 ## argument), so the caller can hoist and free it after the call.
@@ -11140,94 +11047,6 @@ function cstr_temp_name(names: ref[vec.Vec[str]], index: ptr_uint) -> str:
 ## statement emits after itself (the host's `lower_foreign_call_components` and
 ## `discard_result` shapes); `hm_discard` additionally emits a root call as the
 ## statement itself, without the statement's line/path.
-public function wrap_foreign_cstr_frees(
-    ctx: ref[LoweringContext],
-    setup: ref[vec.Vec[ir.Stmt]],
-    result: ptr[ir.Expr],
-    ret_ty: types.Type,
-    cstr_temps: ref[vec.Vec[str]],
-    call_ep: ptr[ast.Expr]
-) -> ptr[ir.Expr]:
-    if ctx.hoist.mode != HoistMode.hm_off:
-        var hs: ptr_uint = 0
-        while hs < setup.len:
-            let s = setup.get(hs) else:
-                fatal(c"lowering: missing foreign setup statement")
-            ctx.hoist.stmts.push(unsafe: read(s))
-            hs += 1
-        # A statement-position (discarded) foreign call is emitted by the
-        # lowering itself, without the statement's line/path — the host's
-        # `lower_foreign_call_statement(discard_result: true)` shape — whatever
-        # its arguments needed; the frees follow it as cleanups.
-        if ctx.hoist.mode == HoistMode.hm_discard and ctx.hoist.root_ep == call_ep:
-            var hd: ptr_uint = 0
-            while hd < cstr_temps.len():
-                ctx.hoist.cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hd)))
-                hd += 1
-            ctx.hoist.stmts.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
-            ctx.hoist.stmt_emitted = true
-            return result
-        if cstr_temps.len() == 0:
-            return result
-        # A nested value-position foreign call with temporaries materializes its
-        # result before the frees (the host's `prepare_statement_lowered_foreign_call`:
-        # `foreign_result` + frees, then the Name).  A statement-root call does
-        # not: the assignment/local/return destination stores it directly (the
-        # host's `lower_foreign_call_components` path).  A nested call inside a
-        # discarded statement (`DrawText(TextFormat(…), …)`) materializes too.
-        let nested_value_call = ctx.hoist.mode != HoistMode.hm_off and call_ep != ctx.hoist.root_ep
-        if (ctx.hoist.mode == HoistMode.hm_return or nested_value_call) and not types.is_void(ret_ty):
-            let rt = fresh_c_temp_name(ctx, "foreign_result")
-            ctx.hoist.stmts.push(ir.Stmt.stmt_local(
-                name = rt,
-                linkage_name = rt,
-                ty = ret_ty,
-                value = result,
-                line = 0,
-                source_path = ""
-            ))
-            var hi: ptr_uint = 0
-            while hi < cstr_temps.len():
-                ctx.hoist.stmts.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hi)))
-                hi += 1
-            return alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
-        var hj: ptr_uint = 0
-        while hj < cstr_temps.len():
-            ctx.hoist.cleanups.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, hj)))
-            hj += 1
-        return result
-
-    if cstr_temps.len() == 0:
-        if setup.len() == 0:
-            return result
-        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = result, ty = ret_ty))
-
-    if types.is_void(ret_ty):
-        setup.push(ir.Stmt.stmt_expression(expression = result, line = 0, source_path = ""))
-        var fi: ptr_uint = 0
-        while fi + 1 < cstr_temps.len():
-            setup.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, fi)))
-            fi += 1
-        let last_result = free_cstr_temp_call(cstr_temp_name(cstr_temps, cstr_temps.len() - 1))
-        return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = last_result, ty = ret_ty))
-
-    let rt = fresh_c_temp_name(ctx, "foreign_result")
-    setup.push(ir.Stmt.stmt_local(
-        name = rt,
-        linkage_name = rt,
-        ty = ret_ty,
-        value = result,
-        line = 0,
-        source_path = ""
-    ))
-    var fj: ptr_uint = 0
-    while fj < cstr_temps.len():
-        setup.push(free_cstr_temp_stmt(cstr_temp_name(cstr_temps, fj)))
-        fj += 1
-    let ret_result = alloc_expr(ir.Expr.expr_name(name = rt, ty = ret_ty, pointer = Option[bool].some(value = false)))
-    return alloc_expr(ir.Expr.expr_stmt_expr(setup = setup.as_span(), result = ret_result, ty = ret_ty))
-
-
 ## `mt_free_foreign_cstr_temp(<name>)` as an IR call expression (void).
 function free_cstr_temp_call(name: str) -> ptr[ir.Expr]:
     let cstr_ty = types.primitive("cstr")
@@ -11456,95 +11275,6 @@ public function lower_str_buffer_char_ptr_argument(
 ## not the mapping's own return type — the host's `owner_analysis` typed it that
 ## way (`c.Vector3ToFloatV(x).v` has a `Float3Array` call and an `array[float, 3]`
 ## member).
-public function walk_mapping_expr(
-    ctx: ref[LoweringContext],
-    ep: ptr[ast.Expr],
-    top_ret_ty: types.Type,
-    owner_module: str
-) -> ptr[ir.Expr]:
-    if not mapping_contains_external_call(ctx, ep):
-        return lower_expr(ctx, ep)
-    unsafe:
-        match read(ep):
-            ast.Expr.expr_call as call:
-                match read(call.callee):
-                    ast.Expr.expr_member_access as ma:
-                        if not member_receiver_is_local(ctx, ma.receiver):
-                            var cargs = vec.Vec[ir.Expr].create()
-                            let raw_info = mapping_call_foreign_info(ctx, owner_module, ma.receiver, ma.member_name)
-                            var k: ptr_uint = 0
-                            while k < call.args.len:
-                                var a: ast.Argument
-                                a = read(call.args.data + k)
-                                var arg_ir = walk_mapping_expr(ctx, a.arg_value, top_ret_ty, owner_module)
-                                # A literal mapping argument (the fixed `null` of
-                                # `= c.SDL_RunApp(..., null)`) takes the raw C
-                                # parameter's declared type, the host's
-                                # `lower_contextual_expression` against the
-                                # resolved declaration (item 5b's rule on the
-                                # mapping path).
-                                match raw_info:
-                                    Option.some as ri:
-                                        if k < ri.value.params.len:
-                                            var raw_param: ast.ForeignParam
-                                            raw_param = read(ri.value.params.data + k)
-                                            arg_ir = literal_value_to_context_type(
-                                                ctx,
-                                                a.arg_value,
-                                                foreign_mod.foreign_param_context_type(ctx, ri.value, raw_param),
-                                                arg_ir
-                                            )
-                                    Option.none:
-                                        pass
-                                cargs.push(read(arg_ir))
-                                k += 1
-                            var call_ty = top_ret_ty
-                            match mapping_call_return_type(ctx, owner_module, ma.receiver, ma.member_name):
-                                Option.some as rt:
-                                    call_ty = rt.value
-                                Option.none:
-                                    pass
-                            return alloc_expr(ir.Expr.expr_call(
-                                callee = ma.member_name,
-                                arguments = cargs.as_span(),
-                                ty = call_ty
-                            ))
-                        return lower_expr(ctx, ep)
-                    ast.Expr.expr_specialization:
-                        return walk_mapping_construction(ctx, call.args, top_ret_ty, owner_module)
-                    _:
-                        return lower_expr(ctx, ep)
-            ast.Expr.expr_prefix_cast as pc:
-                let target = qualify_type(ctx, resolve_type_ref(ctx, pc.target_type))
-                let inner = walk_mapping_expr(ctx, pc.expression, top_ret_ty, owner_module)
-                return alloc_expr(ir.Expr.expr_cast(target_type = target, expression = inner, ty = target))
-            ast.Expr.expr_member_access as ma:
-                # Field access on an external call result (`c.MatrixToFloatV(mat).v`):
-                # walk the receiver so the external call is rebuilt, then take the
-                # member.  The member's type is the mapping's own return type here
-                # (the field IS the projected result).
-                let recv = walk_mapping_expr(ctx, ma.receiver, top_ret_ty, owner_module)
-                return alloc_expr(ir.Expr.expr_member(receiver = recv, member = ma.member_name, ty = top_ret_ty))
-            ast.Expr.expr_binary_op as bin:
-                let l = walk_mapping_expr(ctx, bin.left, top_ret_ty, owner_module)
-                let r = walk_mapping_expr(ctx, bin.right, top_ret_ty, owner_module)
-                # The rebuilt node keeps the analyzer's recorded type (the host
-                # lowers the mapping through `lower_expression`): a comparison
-                # (`= c.glfwInit() != 0`) is `bool`, not its left operand's type.
-                var bty = type_helpers.expr_type(ctx, ep)
-                if types.is_error(bty) or types.type_to_string(bty) == "void":
-                    bty = ir_expr_type(l)
-                return alloc_expr(ir.Expr.expr_binary(operator = bin.operator, left = l, right = r, ty = bty))
-            ast.Expr.expr_unary_op as un:
-                let operand = walk_mapping_expr(ctx, un.operand, top_ret_ty, owner_module)
-                var uty = type_helpers.expr_type(ctx, ep)
-                if types.is_error(uty) or types.type_to_string(uty) == "void":
-                    uty = ir_expr_type(operand)
-                return alloc_expr(ir.Expr.expr_unary(operator = un.operator, operand = operand, ty = uty))
-            _:
-                return lower_expr(ctx, ep)
-
-
 ## Build the aggregate literal for a type-constructor mapping such as
 ## `span[uint](data = c.GuiGetIcons(), len = 2048)`, walking each named field
 ## value so any embedded external call is expanded.  The aggregate type is the
@@ -11565,7 +11295,7 @@ function walk_mapping_construction(
             fatal(c"lowering: inline foreign construction requires named fields")
         fields.push(ir.AggregateField(
             name = fname,
-            value = walk_mapping_expr(ctx, a.arg_value, result_ty, owner_module)
+            value = foreign_mod.walk_mapping_expr(ctx, a.arg_value, result_ty, owner_module)
         ))
         i += 1
     return alloc_expr(ir.Expr.expr_aggregate_literal(ty = result_ty, fields = fields.as_span()))
@@ -11760,86 +11490,6 @@ public function duplicable_foreign_value(ep: ptr[ir.Expr]) -> bool:
 
 ## The host's `inlineable_foreign_argument_expression?` for a lowered value: an
 ## expression a mapping can embed directly (no hidden temporaries inside).
-public function inlineable_foreign_value(ep: ptr[ir.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_name:
-                return true
-            ir.Expr.expr_integer_literal:
-                return true
-            ir.Expr.expr_unsigned_integer_literal:
-                return true
-            ir.Expr.expr_float_literal:
-                return true
-            ir.Expr.expr_string_literal:
-                return true
-            ir.Expr.expr_boolean_literal:
-                return true
-            ir.Expr.expr_null_literal:
-                return true
-            ir.Expr.expr_zero_init:
-                return true
-            ir.Expr.expr_sizeof:
-                return true
-            ir.Expr.expr_alignof:
-                return true
-            ir.Expr.expr_offsetof:
-                return true
-            ir.Expr.expr_call as call:
-                if is_foreign_cstr_temp_call(ep):
-                    return false
-                var k: ptr_uint = 0
-                while k < call.arguments.len:
-                    if not inlineable_foreign_value(call.arguments.data + k):
-                        return false
-                    k += 1
-                return true
-            ir.Expr.expr_call_indirect as call:
-                if not inlineable_foreign_value(call.callee):
-                    return false
-                var k2: ptr_uint = 0
-                while k2 < call.arguments.len:
-                    if not inlineable_foreign_value(call.arguments.data + k2):
-                        return false
-                    k2 += 1
-                return true
-            ir.Expr.expr_member as m:
-                return inlineable_foreign_value(m.receiver)
-            ir.Expr.expr_index as x:
-                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
-            ir.Expr.expr_checked_index as x:
-                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
-            ir.Expr.expr_checked_span_index as x:
-                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
-            ir.Expr.expr_nullable_index as x:
-                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
-            ir.Expr.expr_nullable_span_index as x:
-                return inlineable_foreign_value(x.receiver) and inlineable_foreign_value(x.index)
-            ir.Expr.expr_unary as u:
-                return inlineable_foreign_value(u.operand)
-            ir.Expr.expr_binary as b:
-                return inlineable_foreign_value(b.left) and inlineable_foreign_value(b.right)
-            ir.Expr.expr_conditional as c:
-                return inlineable_foreign_value(c.condition) and inlineable_foreign_value(c.then_expression) and inlineable_foreign_value(c.else_expression)
-            ir.Expr.expr_reinterpret as r:
-                let rp = unsafe: read(r.payload)
-                return inlineable_foreign_value(rp.expression)
-            ir.Expr.expr_cast as c:
-                return inlineable_foreign_value(c.expression)
-            ir.Expr.expr_address_of as a:
-                return inlineable_foreign_value(a.expression)
-            ir.Expr.expr_aggregate_literal as g:
-                var fi: ptr_uint = 0
-                while fi < g.fields.len:
-                    let f = unsafe: read(g.fields.data + fi)
-                    if not inlineable_foreign_value(f.value):
-                        return false
-                    fi += 1
-                return true
-            _:
-                return false
-
-
 ## The declared return type of an external-module call inside an inline mapping
 ## (`c.Vector3ToFloatV(...)`, `math.vector3_to_float_v(...)`): resolve the
 ## receiver alias against the *owner* module's imports, then the member against
@@ -13777,3 +13427,10 @@ public function imported_extern_call(ctx: ref[LoweringContext], target_module: s
 
 public function lower_extern_call(ctx: ref[LoweringContext], info: ForeignInfo, args: span[ast.Argument], call_ep: ptr[ast.Expr]) -> ptr[ir.Expr]:
     return foreign_mod.lower_extern_call(ctx, info, args, call_ep)
+
+
+## Foreign consuming releases are owned by foreign.mt; preserve the lowering entry point.
+public function append_foreign_consuming_releases(ctx: ref[LoweringContext],
+    output: ref[vec.Vec[ir.Stmt]],
+    ep: ptr[ast.Expr]) -> void:
+    foreign_mod.append_foreign_consuming_releases(ctx, output, ep)
