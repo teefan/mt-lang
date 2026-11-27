@@ -235,39 +235,6 @@ public function graph_set_edge_refinement(
     read(graph).edge_refinements.push(EdgeRefinement(from = from, to = to, key = key, non_null = non_null))
 
 
-## True when the given edge carries a refinement, and whether it adds `key` to
-## the non-null set (`nonnull_out`) or removes it.
-public function graph_edge_refinement_of(
-    graph: ref[CfgGraph],
-    from: ptr_uint,
-    to: ptr_uint,
-    key: ptr_uint,
-    nonnull_out: ref[bool]
-) -> bool:
-    var i: ptr_uint = 0
-    while i < read(graph).edge_refinements.len():
-        let r = read(graph).edge_refinements.get(i) else:
-            break
-        unsafe:
-            if read(r).from == from and read(r).to == to and read(r).key == key:
-                read(nonnull_out) = read(r).non_null
-                return true
-        i += 1
-    return false
-
-
-public function graph_edge_label(graph: ref[CfgGraph], from: ptr_uint, to: ptr_uint) -> str:
-    var i: ptr_uint = 0
-    while i < read(graph).edge_labels.len():
-        let e = read(graph).edge_labels.get(i) else:
-            break
-        unsafe:
-            if read(e).from == from and read(e).to == to:
-                return read(e).label
-        i += 1
-    return ""
-
-
 ## True when `to` is reachable from `from` over successor edges (the host's
 ## `Termination` question: a block whose fall-through is unreachable always
 ## terminates).

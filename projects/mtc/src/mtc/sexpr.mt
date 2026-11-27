@@ -143,13 +143,6 @@ public function render_value(buf: ref[string.String], value: SexprValue) -> void
             buf.push_byte(')')
 
 
-## A single-element span of values.
-public function sexpr_list1(a: SexprValue) -> span[SexprValue]:
-    var v = vec.Vec[SexprValue].create()
-    v.push(a)
-    return v.as_span()
-
-
 ## A single-element span of fields.
 function fields1(f: SexprField) -> span[SexprField]:
     var v = vec.Vec[SexprField].create()

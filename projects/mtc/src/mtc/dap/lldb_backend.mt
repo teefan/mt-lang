@@ -15,7 +15,6 @@ import mtc.dap.protocol as proto
 
 ## How a pending adapter request resolves when its response arrives.
 public const KIND_FORWARD: int = 0
-public const KIND_INTERNAL: int = 1
 public const KIND_CLIENT_INIT: int = 2
 public const KIND_START_INIT: int = 3
 public const KIND_START: int = 4
@@ -24,8 +23,6 @@ public const KIND_AUTO_CONTINUE: int = 6
 public const KIND_TERMINATE: int = 7
 public const KIND_DISCONNECT: int = 8
 public const KIND_SYNC_BREAKPOINTS: int = 9
-public const KIND_SYNC_FUNCTIONS: int = 10
-public const KIND_SYNC_EXCEPTIONS: int = 11
 public const KIND_PAUSE_STACK: int = 12
 public const KIND_MODULES: int = 13
 

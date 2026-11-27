@@ -2700,59 +2700,6 @@ function scan_callable_value_site(facts: ref[ScanFacts], tokens: span[token_mod.
     return false
 
 
-## Classify an identifier lexeme through the Analysis maps.
-public function classify_identifier(
-    lexeme: str,
-    analysis: ref[analyzer.Analysis],
-) -> uint:
-    if is_builtin_type_name(lexeme):
-        return TOKEN_TYPE
-    unsafe:
-        if read(analysis).functions.contains(lexeme):
-            return TOKEN_FUNCTION
-        if read(analysis).method_sigs.contains(lexeme):
-            return TOKEN_METHOD
-        if read(analysis).structs.contains(lexeme):
-            return TOKEN_STRUCT
-        if read(analysis).static_member_types.contains(lexeme):
-            return TOKEN_TYPE
-        if read(analysis).interfaces.contains(lexeme):
-            return TOKEN_INTERFACE
-        if read(analysis).type_alias_types.contains(lexeme):
-            return TOKEN_TYPE
-        if read(analysis).imports.contains(lexeme):
-            return TOKEN_NAMESPACE
-    return TOKEN_VARIABLE
-
-
-## The set of every parameter name declared by the module's functions and
-## methods, for parameter classification.
-public function collect_param_names(analysis: ref[analyzer.Analysis]) -> map_mod.Map[str, bool]:
-    var names = map_mod.Map[str, bool].create()
-    unsafe:
-        var fn_values = read(analysis).functions.values()
-        while true:
-            let sp = fn_values.next() else:
-                break
-            add_param_names(ref_of(names), read(sp))
-
-        var method_values = read(analysis).method_sigs.values()
-        while true:
-            let sp = method_values.next() else:
-                break
-            add_param_names(ref_of(names), read(sp))
-    return names
-
-
-function add_param_names(names: ref[map_mod.Map[str, bool]], sig: analyzer.FnSig) -> void:
-    var pi: ptr_uint = 0
-    while pi < sig.params.len:
-        let param = unsafe: read(sig.params.data + pi)
-        if param.name.len > 0:
-            names.set(param.name, true)
-        pi += 1
-
-
 ## True for primitive type names and built-in type constructors, which lex
 ## as ordinary identifiers but should highlight as types.
 public function is_builtin_type_name(lexeme: str) -> bool:

@@ -255,14 +255,6 @@ public function node_count(graph: ref[PackageGraph]) -> ptr_uint:
     return graph.nodes.len()
 
 
-public function node_at(graph: ref[PackageGraph], index: ptr_uint) -> ptr[GraphNode]?:
-    return graph.nodes.get(index)
-
-
-public function root_node(graph: ref[PackageGraph]) -> ptr[GraphNode]?:
-    return graph.nodes.get(graph.root_index)
-
-
 ## Pre-order DFS from the root, deduplicated by manifest path (the host's
 ## `Node#packages`).
 function collect_node_indices(
@@ -327,24 +319,6 @@ function contains_text(values: ref[vec.Vec[string.String]], candidate: str) -> b
             return true
         i += 1
     return false
-
-
-## The deepest package root containing `path`, or none (the host's
-## `Node#package_for_path`).
-public function package_for_path(graph: ref[PackageGraph], path: str) -> Option[ptr_uint]:
-    var best: Option[ptr_uint] = Option[ptr_uint].none
-    var best_length: ptr_uint = 0
-    var i: ptr_uint = 0
-    while i < graph.nodes.len():
-        let node = graph.nodes.get(i) else:
-            break
-        let root = unsafe: read(node).manifest.root_dir.as_str()
-        if paths.path_within_root(path, root):
-            if best.is_none() or root.len > best_length:
-                best = Option[ptr_uint].some(value = i)
-                best_length = root.len
-        i += 1
-    return best
 
 
 ## `PackageGraph.render_tree`: package names, one dependency level indented by

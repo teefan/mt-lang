@@ -26,14 +26,6 @@ import mtc.c_naming as naming
 import mtc.c_backend.reachability as reachability
 import mtc.strings
 
-## A backend-stage error raised for unrecoverable code-generation failures.
-public struct CBackendError:
-    message: str
-    line: ptr_uint
-    column: ptr_uint
-    path: str
-
-
 ## The C emitter: an output buffer plus the program-global string-literal map
 ## (`str` content -> `mt_str_lit_N`) threaded through expression emission.
 struct Emitter:

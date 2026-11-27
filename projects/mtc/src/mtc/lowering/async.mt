@@ -157,12 +157,6 @@ public function expr_has_short_circuit(ep: ptr[ast.Expr]?) -> bool:
 #  State counting
 # =============================================================================
 
-public function count_async_states(sp: ptr[ast.Stmt]?) -> int:
-    var c: int = 0
-    count_await_in_stmt(sp, ref_of(c))
-    return c
-
-
 function count_await_in_stmt(sp: ptr[ast.Stmt]?, count: ref[int]) -> void:
     let p = sp else:
         return
@@ -268,40 +262,6 @@ function count_await_in_expr(ep: ptr[ast.Expr]?, count: ref[int]) -> void:
 #  Frame struct builder
 # =============================================================================
 
-public function build_async_frame(
-    module_name: str,
-    name: str,
-    has_await: bool,
-    result_type: types.Type
-) -> ir.StructDecl:
-    let bool_ty = types.primitive("bool")
-    let int_ty = types.primitive("int")
-    let ptr_void = types.generic_type(name = "ptr", args = utils.sp_type(types.primitive("void")))
-    let frame_c = naming.qualified_c_name(module_name, strings.join_two(name, "_frame"))
-
-    var fields = vec.Vec[ir.Field].create()
-    fields.push(ir.Field(name = "ready", ty = bool_ty))
-    fields.push(ir.Field(name = "cancelled", ty = bool_ty))
-    fields.push(ir.Field(name = "waiter_frame", ty = ptr_void))
-    fields.push(ir.Field(name = "waiter", ty = ptr_void))
-    if has_await:
-        fields.push(ir.Field(name = "state", ty = int_ty))
-    if not is_void_type(result_type):
-        fields.push(ir.Field(name = "result", ty = result_type))
-
-    return ir.StructDecl(
-        name = frame_c,
-        linkage_name = frame_c,
-        fields = fields.as_span(),
-        packed = false,
-        alignment = 0,
-        source_module = Option[str].none,
-    )
-
-# =============================================================================
-#  Type helpers
-# =============================================================================
-
 public function is_void_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_primitive as p:
@@ -312,21 +272,3 @@ public function is_void_type(t: types.Type) -> bool:
 
 public function ptr_void_type() -> types.Type:
     return types.generic_type(name = "ptr", args = utils.sp_type(types.primitive("void")))
-
-
-public function task_type(inner: types.Type) -> types.Type:
-    var args = vec.Vec[types.Type].create()
-    args.push(inner)
-    return types.generic_type(name = "Task", args = args.as_span())
-
-
-public function bool_type() -> types.Type:
-    return types.primitive("bool")
-
-
-public function int_type() -> types.Type:
-    return types.primitive("int")
-
-
-public function void_type() -> types.Type:
-    return types.primitive("void")

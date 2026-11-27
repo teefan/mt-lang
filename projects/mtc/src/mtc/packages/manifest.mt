@@ -194,16 +194,6 @@ public function load(path: str) -> Result[PackageManifest, string.String]:
     )
 
 
-public function load_option(path: str) -> Option[PackageManifest]:
-    match load(path):
-        Result.failure as failure_payload:
-            var message = failure_payload.error
-            message.release()
-            return Option[PackageManifest].none
-        Result.success as payload:
-            return Option[PackageManifest].some(value = payload.value)
-
-
 public function manifest_exists_for(path: str) -> bool:
     var expanded = paths.absolute_path(path)
     defer: expanded.release()

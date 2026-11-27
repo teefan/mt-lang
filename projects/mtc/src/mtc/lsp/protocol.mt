@@ -100,14 +100,6 @@ public const READ_MALFORMED: ptr_uint = 2
 const MAX_BODY_BYTES: ptr_uint = 268435456
 
 
-## Read one JSON-RPC message from stdin.  Returns none with `status` set to
-## READ_EOF (nothing left to read) or READ_MALFORMED (a frame that could not be
-## understood — the caller may report it and keep going).
-public function read_message() -> Option[Message]:
-    var status: ptr_uint = READ_OK
-    return read_message_status(ref_of(status))
-
-
 public function read_message_status(status: ref[ptr_uint]) -> Option[Message]:
     unsafe: read(status) = READ_OK
     var header_line = string.String.create()
@@ -369,77 +361,6 @@ public function write_partial_result(token: json.Value, value_json: str) -> void
     text.append(value_json)
     text.append("}}")
     write_framed_json(text.as_str())
-
-
-## Send a $/progress begin notification.  Returns the token string the
-## caller should pass to report_progress / end_progress.
-public function write_progress_begin(title: str, message: str, cancellable: bool) -> str:
-    var token = string.String.create()
-    token.append_format(f"mt-lsp-progress-#{next_progress_token()}")
-    write_progress_notification(token.as_str(), "begin", title, message)
-    return token.as_str()
-
-
-## Send a $/progress report notification for an active progress token.
-public function write_progress_report(token: str, percentage: int, message: str) -> void:
-    var payload = string.String.create()
-    defer: payload.release()
-    payload.append("{\"kind\":\"report\"")
-    if percentage >= 0:
-        payload.append(",\"percentage\":")
-        payload.append_format(f"#{percentage}")
-    if message.len > 0:
-        payload.append(",\"message\":\"")
-        append_escaped(ref_of(payload), message)
-        payload.append("\"")
-    payload.append("}")
-    write_notification_raw("$/progress", token, payload.as_str())
-
-
-## Send a $/progress end notification for an active progress token.
-public function write_progress_end(token: str, message: str) -> void:
-    write_progress_notification(token, "end", "", message)
-
-
-## Send a $/progress notification with a kind and optional title/message.
-function write_progress_notification(token: str, kind: str, title: str, message: str) -> void:
-    var payload = string.String.create()
-    defer: payload.release()
-    payload.append("{\"kind\":\"")
-    append_escaped(ref_of(payload), kind)
-    payload.append("\"")
-    if title.len > 0:
-        payload.append(",\"title\":\"")
-        append_escaped(ref_of(payload), title)
-        payload.append("\"")
-    if message.len > 0:
-        payload.append(",\"message\":\"")
-        append_escaped(ref_of(payload), message)
-        payload.append("\"")
-    payload.append("}")
-    write_notification_raw("$/progress", token, payload.as_str())
-
-
-## Write a notification with a token in params.  The payload_json is the
-## value object already serialized as a JSON string.
-function write_notification_raw(method: str, token: str, payload_json: str) -> void:
-    var response_text = string.String.create()
-    defer: response_text.release()
-    response_text.append("{\"jsonrpc\":\"2.0\",\"method\":\"")
-    append_escaped(ref_of(response_text), method)
-    response_text.append("\",\"params\":{\"token\":\"")
-    append_escaped(ref_of(response_text), token)
-    response_text.append("\",\"value\":")
-    response_text.append(payload_json)
-    response_text.append("}}")
-    write_framed_json(response_text.as_str())
-
-var progress_token_counter: ptr_uint = 0
-
-
-function next_progress_token() -> ptr_uint:
-    progress_token_counter += 1
-    return progress_token_counter
 
 
 ## Send a JSON-RPC request to the client and return the numeric id.

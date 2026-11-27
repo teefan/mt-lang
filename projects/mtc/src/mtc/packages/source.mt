@@ -355,16 +355,6 @@ public function clone_identity(identity: SourceIdentity) -> SourceIdentity:
     )
 
 
-public function clone_source(source: Source) -> Source:
-    return Source(
-        identity = clone_identity(source.identity),
-        local_root = string.String.from_str(source.local_root.as_str()),
-    )
-
-# =============================================================================
-#  Lock attributes and source keys
-# =============================================================================
-
 public function identity_lock_attributes(identity: SourceIdentity) -> vec.Vec[LockAttribute]:
     var attributes = vec.Vec[LockAttribute].create()
     match identity.kind:
@@ -564,21 +554,6 @@ public function cache_manifest_path(cache_root: str, identity: SourceIdentity) -
             )
     return Result[string.String, string.String].failure(error = source_error("invalid cache path"))
 
-
-public function cache_materialized(cache_root: str, identity: SourceIdentity) -> bool:
-    match cache_manifest_path(cache_root, identity):
-        Result.failure as failure_payload:
-            var message = failure_payload.error
-            message.release()
-            return false
-        Result.success as path_payload:
-            var path = path_payload.value
-            defer: path.release()
-            return fs.is_file(path.as_str())
-
-# =============================================================================
-#  Resolver
-# =============================================================================
 
 public function create_resolver(mode: ResolutionMode) -> SourceResolver:
     return SourceResolver(

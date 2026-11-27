@@ -354,28 +354,6 @@ public function apply_rename_rule(name: str, kind: str, pattern: str, replace_wi
     return string.String.from_str(name)
 
 
-public function apply_rename_rules(
-    name: str,
-    rule_kinds: span[str],
-    rule_patterns: span[str],
-    rule_replacements: span[str],
-) -> string.String:
-    var current = string.String.from_str(name)
-    var i: ptr_uint = 0
-    while i < rule_kinds.len:
-        let kind = unsafe: read(rule_kinds.data + i)
-        let pattern = if i < rule_patterns.len: unsafe: read(rule_patterns.data + i) else: ""
-        let replacement = if i < rule_replacements.len: unsafe: read(rule_replacements.data + i) else: ""
-        var next = apply_rename_rule(current.as_str(), kind, pattern, replacement)
-        current.release()
-        current = next
-        i += 1
-    return current
-
-# =============================================================================
-#  OpenGL normalization (host naming.rb:88-252)
-# =============================================================================
-
 ## The host's three `openglize_binding_name` gsubs.
 public function openglize_binding_name(name: str) -> string.String:
     # 1) ([A-Za-z])((?:i64|i|ui)_v)(?=\z|_) -> \1_\2

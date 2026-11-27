@@ -798,32 +798,6 @@ public function handle_type_definition(
     handle_definition(ws, uri, line, character, id)
 
 
-## The analysis to answer type questions with: the loader-backed one when the
-## document loads (imports bound, so `var n = node.Node.create(...)` types as
-## `node.Node`), else the single-file check.  `ast_file` is re-pointed at the
-## tree the analysis was built from, since `resolved_expr_types` is keyed by
-## expression pointer.
-public function analysis_for_document(
-    ws: ref[workspace.Workspace],
-    file_path: str,
-    parsed_file: ast.SourceFile,
-) -> analyzer.Analysis:
-    let entry = workspace.analysis_entry_for(ws, file_path) else:
-        return analyzer.check_source_file(parsed_file)
-    return unsafe: read(entry).analysis
-
-
-## The AST the analysis above was built from.
-public function ast_for_document(
-    ws: ref[workspace.Workspace],
-    file_path: str,
-    parsed_file: ast.SourceFile,
-) -> ast.SourceFile:
-    let entry = workspace.analysis_entry_for(ws, file_path) else:
-        return parsed_file
-    return unsafe: read(entry).analysis.source_file
-
-
 ## The type of the value named `name` at `target_line`: its inferred type for a
 ## local or parameter, its recorded type for a module-level value.  The binding
 ## comes from the scope walk, so the innermost enclosing declaration answers — a

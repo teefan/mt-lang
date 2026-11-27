@@ -101,7 +101,7 @@ textual counting cannot see aliasing or dynamic dispatch, and names are matched
 globally (two modules exporting the same name can mask each other). Existing
 candidates are frozen; a **new** one fails `--strict`.
 
-Current baseline: **29 unused, 7 test-only**. Examples worth triaging:
+Current baseline after session 196: **0 unused, 7 intentionally test-only**. Historical candidates were:
 `c_backend.CBackendError`, `lowering.LoweringError`, `lowering/async.mt` type
 helpers, `lsp/navigation.mt analysis_for_document`/`ast_for_document`,
 `ir.TypeId`, and the `packages/*` helpers.

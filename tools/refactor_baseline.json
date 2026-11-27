@@ -356,44 +356,15 @@
     "wasm_shell": "wasm_shell"
   },
   "dead_exports": {
-    "unused": [
-      "projects/mtc/src/mtc/c_backend/c_backend.mt:30:struct:CBackendError",
-      "projects/mtc/src/mtc/dap/lldb_backend.mt:18:const:KIND_INTERNAL",
-      "projects/mtc/src/mtc/dap/lldb_backend.mt:27:const:KIND_SYNC_FUNCTIONS",
-      "projects/mtc/src/mtc/dap/lldb_backend.mt:28:const:KIND_SYNC_EXCEPTIONS",
-      "projects/mtc/src/mtc/imported_bindings/naming.mt:357:function:apply_rename_rules",
-      "projects/mtc/src/mtc/lowering/async.mt:160:function:count_async_states",
-      "projects/mtc/src/mtc/lowering/async.mt:271:function:build_async_frame",
-      "projects/mtc/src/mtc/lowering/async.mt:317:function:task_type",
-      "projects/mtc/src/mtc/lowering/async.mt:323:function:bool_type",
-      "projects/mtc/src/mtc/lowering/async.mt:327:function:int_type",
-      "projects/mtc/src/mtc/lowering/async.mt:331:function:void_type",
-      "projects/mtc/src/mtc/lsp/navigation.mt:806:function:analysis_for_document",
-      "projects/mtc/src/mtc/lsp/navigation.mt:817:function:ast_for_document",
-      "projects/mtc/src/mtc/lsp/protocol.mt:106:function:read_message",
-      "projects/mtc/src/mtc/lsp/protocol.mt:376:function:write_progress_begin",
-      "projects/mtc/src/mtc/lsp/protocol.mt:384:function:write_progress_report",
-      "projects/mtc/src/mtc/lsp/protocol.mt:400:function:write_progress_end",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2704:function:classify_identifier",
-      "projects/mtc/src/mtc/lsp/semantic_tokens.mt:2730:function:collect_param_names",
-      "projects/mtc/src/mtc/packages/graph.mt:258:function:node_at",
-      "projects/mtc/src/mtc/packages/graph.mt:262:function:root_node",
-      "projects/mtc/src/mtc/packages/graph.mt:334:function:package_for_path",
-      "projects/mtc/src/mtc/packages/manifest.mt:197:function:load_option",
-      "projects/mtc/src/mtc/packages/source.mt:358:function:clone_source",
-      "projects/mtc/src/mtc/packages/source.mt:568:function:cache_materialized",
-      "projects/mtc/src/mtc/semantic/control_flow/graph.mt:240:function:graph_edge_refinement_of",
-      "projects/mtc/src/mtc/semantic/control_flow/graph.mt:259:function:graph_edge_label",
-      "projects/mtc/src/mtc/sexpr.mt:147:function:sexpr_list1"
-    ],
+    "unused": [],
     "test_only": [
       "projects/mtc/src/mtc/linter/fix_engine.mt:60:function:is_fixable",
       "projects/mtc/src/mtc/linter/linter.mt:194:function:lint_source",
       "projects/mtc/src/mtc/parser/parser.mt:920:function:parse_reporting",
       "projects/mtc/src/mtc/pretty_printer/ir_formatter.mt:41:function:format_program",
-      "projects/mtc/src/mtc/semantic/control_flow/graph.mt:585:function:flow_create",
+      "projects/mtc/src/mtc/semantic/control_flow/graph.mt:552:function:flow_create",
       "projects/mtc/src/mtc/semantic/types.mt:1346:function:nominal_key",
-      "projects/mtc/src/mtc/sexpr.mt:1114:function:dump_ir"
+      "projects/mtc/src/mtc/sexpr.mt:1107:function:dump_ir"
     ]
   },
   "duplication": {
@@ -1623,7 +1594,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148977,
+    "total_code": 148726,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1682,8 +1653,8 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 8881,
-        "code": 7435,
+        "lines": 8873,
+        "code": 7430,
         "max_line": 237,
         "max_function": 270
       },
@@ -1712,8 +1683,8 @@
         "max_function": 88
       },
       "projects/mtc/src/mtc/dap/lldb_backend.mt": {
-        "lines": 362,
-        "code": 304,
+        "lines": 359,
+        "code": 301,
         "max_line": 113,
         "max_function": 40
       },
@@ -1814,8 +1785,8 @@
         "max_function": 101
       },
       "projects/mtc/src/mtc/imported_bindings/naming.mt": {
-        "lines": 825,
-        "code": 672,
+        "lines": 803,
+        "code": 655,
         "max_line": 116,
         "max_function": 100
       },
@@ -1982,8 +1953,8 @@
         "max_function": 23
       },
       "projects/mtc/src/mtc/lowering/async.mt": {
-        "lines": 332,
-        "code": 281,
+        "lines": 274,
+        "code": 240,
         "max_line": 136,
         "max_function": 63
       },
@@ -2288,8 +2259,8 @@
         "max_function": 86
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 6092,
-        "code": 4777,
+        "lines": 6066,
+        "code": 4761,
         "max_line": 206,
         "max_function": 226
       },
@@ -2300,9 +2271,9 @@
         "max_function": 74
       },
       "projects/mtc/src/mtc/lsp/protocol.mt": {
-        "lines": 579,
-        "code": 435,
-        "max_line": 94,
+        "lines": 500,
+        "code": 381,
+        "max_line": 91,
         "max_function": 133
       },
       "projects/mtc/src/mtc/lsp/pull_diagnostics.mt": {
@@ -2348,8 +2319,8 @@
         "max_function": 55
       },
       "projects/mtc/src/mtc/lsp/semantic_tokens.mt": {
-        "lines": 3195,
-        "code": 2525,
+        "lines": 3142,
+        "code": 2482,
         "max_line": 120,
         "max_function": 189
       },
@@ -2480,8 +2451,8 @@
         "max_function": 121
       },
       "projects/mtc/src/mtc/packages/graph.mt": {
-        "lines": 398,
-        "code": 318,
+        "lines": 372,
+        "code": 300,
         "max_line": 113,
         "max_function": 89
       },
@@ -2498,8 +2469,8 @@
         "max_function": 170
       },
       "projects/mtc/src/mtc/packages/manifest.mt": {
-        "lines": 1225,
-        "code": 1042,
+        "lines": 1215,
+        "code": 1034,
         "max_line": 108,
         "max_function": 150
       },
@@ -2522,8 +2493,8 @@
         "max_function": 77
       },
       "projects/mtc/src/mtc/packages/source.mt": {
-        "lines": 1300,
-        "code": 1132,
+        "lines": 1275,
+        "code": 1117,
         "max_line": 152,
         "max_function": 117
       },
@@ -2642,8 +2613,8 @@
         "max_function": 93
       },
       "projects/mtc/src/mtc/semantic/control_flow/graph.mt": {
-        "lines": 765,
-        "code": 562,
+        "lines": 732,
+        "code": 535,
         "max_line": 120,
         "max_function": 41
       },
@@ -2684,8 +2655,8 @@
         "max_function": 185
       },
       "projects/mtc/src/mtc/sexpr.mt": {
-        "lines": 3316,
-        "code": 2879,
+        "lines": 3309,
+        "code": 2875,
         "max_line": 140,
         "max_function": 208
       },
