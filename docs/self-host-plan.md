@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-191-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-192-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 191, 2026-11-26)
+## Status at a glance (session 192, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -128,7 +128,7 @@ history.
 | Multi-TU build | **opt-in `--split`** (sessions 171–172): shared `mtc.h`, one data unit for globals/static asserts, one `unit_<n>.c` per module, and one `cc -c` object per unit with an exact content-keyed object cache (512 MiB cap including key sidecars).  The split-built compiler passes 22/22 and 106/106; cache edit-one-module reuses all but one object.  Single-file output is byte-identical and remains the default.  Static archives and wasm still reject `--split` |
 | Watch/dev loop | **`mtc watch PATH`** (session 173): polls `.mt` mtime seconds/nanoseconds/size under the entry directory plus every `-I` root (default 500 ms), keeps a loader `ModuleCache` and calls `check_program_with_source` in-process (a leaf edit advances parse/analysis only for the changed module and dependents), then forks a build child for lowering/C/link so per-build IR memory dies with the child.  `--split` reuses unchanged per-TU objects (leaf `3 reused / 1 compiled`; no-op `0 compiled`).  `--run` optional; rebuilds compile to a sibling temp path and rename atomically, so an external run never observes a partial binary; 100-cycle no-growth gate |
 | IR verifier | **`ir_verify.mt`** (session 174): checks unique linkage names, concrete declaration types (no `ty_error`/`ty_var`), non-empty module owners, unique fields/params/members/arms, a single `main` entry point returning `int`, switch defaults, and labels/gotos.  `--verify-ir` is available on `build`/`run`/`lower`/`emit-c`; the dev gate verifies the compiler IR after rebuilding, and 12 constructed-IR unit tests cover each rejection path |
-| Lowering extraction | **`statements.mt` + `member_access.mt` + `expressions.mt` + `calls.mt` + `events.mt` + `declarations.mt` + `foreign.mt` + `type_qualification.mt` + `type_resolution.mt` + `declaration_resolution.mt` + `proc.mt` + `driver.mt`** (sessions 175/178/179/180/181/182/183/184/185/186/187/188/189/190/191): statements 1,664 lines; member_access 960; expressions 1,039; calls 858; events 2,181; declarations 487; foreign 1,582; type_qualification 213; type_resolution 575; declaration_resolution 620; proc 1,239; driver 408.  `lowering.mt` moved from 23,008 to 11,823 lines (11,189 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The 4.2 shape goal is met; the counter/cache/format/hoist context groups cover 4.3, and 4.4 per-module lowering remains deferred |
+| Lowering extraction | **`statements.mt` + `member_access.mt` + `expressions.mt` + `calls.mt` + `events.mt` + `declarations.mt` + `foreign.mt` + `type_qualification.mt` + `type_resolution.mt` + `declaration_resolution.mt` + `proc.mt` + `driver.mt`** (sessions 175/178/179/180/181/182/183/184/185/186/187/188/189/190/191): statements 1,664 lines; member_access 960; expressions 1,039; calls 858; events 2,181; declarations 487; foreign 1,582; type_qualification 213; type_resolution 575; declaration_resolution 620; proc 1,239; driver 408.  `lowering.mt` moved from 23,008 to 11,823 lines (11,189 extracted).  Helper visibility was opened for the moved calls; C differs only by the extracted functions' source positions, and all behavior oracles remain green.  The 4.2 shape goal is met; the counter/cache/format/hoist context groups cover 4.3, and 4.4 is measured and closed as a no-go |
 | Context grouping | **`LoweringCounters`** (session 176) plus **`LoweringCaches`**, **`LoweringFormatState`**, and **`LoweringHoistState`** (session 177).  Counters group temp/match/async; caches group specialization bodies, generic struct declarations, str-buffer types, event runtimes, and dyn vtables; format groups the dynamic-format/name/cstr state; hoist groups the statement-position window.  Access-only refactors, no behavior changes; the full compiler-core gate is green |
 | Recorded oracles | **CLI 231/231 (0.6.3); diagnostics 497 compared / 8 changed / 2 unrecorded / 0 differ; lint 644 compared / 31 changed / 16 unrecorded / 0 differ; formatter 777 × 3 modes / 0** — digest-keyed; the CLI golden has the 0.6.3 version-only rows, and the formatter/lint/diagnostic fixtures cover the current tree |
 | `check` diagnostics | the 500-file diagnostic oracle is the gate (the extra row is `box2d_api_smoke`); the two `loop-single-iteration` columns now match the host (16), and the historical host comparison's 3 message rows are retired with the host |
@@ -7042,6 +7042,31 @@ The lowering core has been split into statement and member-expression modules:
 **22/22**; split full; watch **100 rebuilds**; CLI **231/231**; diagnostics
 **497 compared / 8 changed / 2 unrecorded / 0 differ**; lint **644 compared /
 31 changed / 16 unrecorded / 0 differ**; examples **311/311**.
+
+### Session 192 — 4.4 measurement and no-go
+
+Measured on a scratch copy of the self-host source (401 `.mt` files), using
+the built `tmp/mtc-dev`:
+
+- full self-host `--no-cache` build: **30.8 s**;
+- whole-program `lower` of `main.mt`: **12.8 s** (stage2: 13.1 s);
+- `emit-c`: **13.5 s**;
+- one-leaf-edit watch rebuild, with `std` in the include root: **29.7 s**.
+
+Decision: **do not build per-module lowering now.**  Lowering is 43% of a
+debug watch rebuild, but it is not separable enough to cache safely:
+monomorphization, generic-instance registration, proc renumbering, event
+runtimes, dynamic vtables, and module ordering are program-global.  A
+per-module IR cache would need a full dependency invalidator and a
+re-verification path before it could be trusted; the dominant remaining
+cost is C compile/link, which the split-object cache already addresses.
+Revisit only if the rebuild becomes lowering-dominated (for example after
+faster codegen), and then measure again first.
+
+Wave 4 is complete: 4.1 verifier, 4.2 extraction to 11,823 lines, the 4.3
+context groups, and this measured 4.4 close-out.  No new code changed in
+this session; the session-191 compiler-core gate remains the verified
+baseline.
 
 ### Known issue: `milkTea/debugInfo` on very large files
 
