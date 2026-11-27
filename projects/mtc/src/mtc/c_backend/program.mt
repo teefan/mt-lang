@@ -9,6 +9,7 @@ import mtc.semantic.types as types
 import mtc.strings
 import mtc.c_backend.reachability as reachability
 import mtc.c_backend.c_backend as c_backend
+import mtc.c_backend.task as task_emitter
 
 
 function emit_program_types(
@@ -114,11 +115,11 @@ function emit_program_types(
         # type aliases) and topological sort (alongside structs/variants).
         var task_seen = map_mod.Map[str, bool].create()
         var task_elements = map_mod.Map[str, types.Type].create()
-        c_backend.collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
+        task_emitter.collect_task_type_set(program, ref_of(task_seen), ref_of(task_elements))
 
         # Task forward declarations must come before type aliases because
         # aliases like `typedef mt_task_X ChanMessageTask` reference them.
-        c_backend.emit_task_forward_decls(e, ref_of(task_seen))
+        task_emitter.emit_task_forward_decls(e, ref_of(task_seen))
         c_backend.emit_type_aliases(e, program)
 
         # Emit span type full definitions after forward declarations
@@ -171,7 +172,7 @@ function emit_program_types(
                     let te_ptr = task_elements.get(node.key)
                     if te_ptr != null:
                         elem = unsafe: read(te_ptr)
-                    c_backend.emit_task_struct_type(e, node.key, elem)
+                    task_emitter.emit_task_struct_type(e, node.key, elem)
                 else:
                     # kind 5: tuple struct
                     let tuple_ptr = tuple_types.get(node.index) else:
