@@ -24,11 +24,12 @@ import mtc.ir as ir
 import mtc.semantic.types as types
 import mtc.c_naming as naming
 import mtc.c_backend.reachability as reachability
+import mtc.c_backend.format_string as format_string
 import mtc.strings
 
 ## The C emitter: an output buffer plus the program-global string-literal map
 ## (`str` content -> `mt_str_lit_N`) threaded through expression emission.
-struct Emitter:
+public struct Emitter:
     buffer: string.String
     str_lit_map: map_mod.Map[str, str]
     # Labels targeted by a `goto` in the current function; a `stmt_label` whose
@@ -973,7 +974,7 @@ function emit_program_bodies(
 #  String helpers
 # =============================================================================
 
-function emit_line(e: ref[Emitter], text: str) -> void:
+public function emit_line(e: ref[Emitter], text: str) -> void:
     emit_append(e, text)
     emit_newline(e)
 
@@ -7272,305 +7273,10 @@ function uses_format_helpers(program: ir.Program) -> bool:
 
 
 function emit_format_string_helpers(e: ref[Emitter]) -> void:
-    emit_format_string_core(e)
-    emit_format_string_length_helpers(e)
-    emit_format_string_append_helpers(e)
+    format_string.emit_format_string_core(e)
+    format_string.emit_format_string_length_helpers(e)
+    format_string.emit_format_string_append_helpers(e)
 
-
-function emit_format_string_core(e: ref[Emitter]) -> void:
-    emit_line(e, "static mt_str mt_format_str_make(uintptr_t len) {")
-    emit_line(e, "  if (len > UINTPTR_MAX - 1) mt_fatal(\"format string size overflow\");")
-    emit_line(e, "  char* data = (char*)malloc((size_t)(len + 1));")
-    emit_line(e, "  if (data == NULL) mt_fatal(\"format string allocation failed\");")
-    emit_line(e, "  data[len] = '\\0';")
-    emit_line(e, "  return (mt_str){ .data = data, .len = len };")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static void mt_format_str_release(mt_str value) {")
-    emit_line(e, "  free(value.data);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static void mt_format_check_capacity(mt_str target, uintptr_t offset, uintptr_t len) {")
-    emit_line(
-        e,
-        "  if (offset > target.len || len > target.len - offset) mt_fatal(\"format string append exceeds capacity\");"
-    )
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(
-        e,
-        "static uintptr_t mt_format_append_bytes(mt_str target, uintptr_t offset, const char* data, uintptr_t len) {"
-    )
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  if (len > 0) memcpy(target.data + offset, data, (size_t)len);")
-    emit_line(e, "  offset += len;")
-    emit_line(e, "  target.data[offset] = '\\0';")
-    emit_line(e, "  return offset;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_ptr_uint_len(uintptr_t value) {")
-    emit_line(e, "  uintptr_t len = 1;")
-    emit_line(e, "  while (value >= 10) {")
-    emit_line(e, "    value /= 10;")
-    emit_line(e, "    len += 1;")
-    emit_line(e, "  }")
-    emit_line(e, "  return len;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_ulong_hex_len(uint64_t value) {")
-    emit_line(e, "  int written = snprintf(NULL, 0, \"%llx\", (unsigned long long)value);")
-    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure unsigned hex\");")
-    emit_line(e, "  return (uintptr_t)written;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_long_hex_len(int64_t value) {")
-    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_hex_len(((uint64_t)(-(value + 1))) + 1);")
-    emit_line(e, "  return mt_format_ulong_hex_len((uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_ulong_oct_len(uint64_t value) {")
-    emit_line(e, "  int written = snprintf(NULL, 0, \"%llo\", (unsigned long long)value);")
-    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure unsigned octal\");")
-    emit_line(e, "  return (uintptr_t)written;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_long_oct_len(int64_t value) {")
-    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_oct_len(((uint64_t)(-(value + 1))) + 1);")
-    emit_line(e, "  return mt_format_ulong_oct_len((uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_ulong_bin_len(uint64_t value) {")
-    emit_line(e, "  uintptr_t len = 1;")
-    emit_line(e, "  while (value >= 2) {")
-    emit_line(e, "    value >>= 1;")
-    emit_line(e, "    len += 1;")
-    emit_line(e, "  }")
-    emit_line(e, "  return len;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_long_bin_len(int64_t value) {")
-    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_bin_len(((uint64_t)(-(value + 1))) + 1);")
-    emit_line(e, "  return mt_format_ulong_bin_len((uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_int_len(int32_t value) {")
-    emit_line(e, "  if (value < 0) return 1 + mt_format_ptr_uint_len((uintptr_t)(-((int64_t)value)));")
-    emit_line(e, "  return mt_format_ptr_uint_len((uintptr_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_append_str(mt_str target, uintptr_t offset, mt_str value) {")
-    emit_line(e, "  return mt_format_append_bytes(target, offset, value.data, value.len);")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_append_ptr_uint(mt_str target, uintptr_t offset, uintptr_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ptr_uint_len(value);")
-    emit_line(e, "  uintptr_t index = offset + len;")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  target.data[index] = '\\0';")
-    emit_line(e, "  do {")
-    emit_line(e, "    index -= 1;")
-    emit_line(e, "    target.data[index] = (char)('0' + (value % 10));")
-    emit_line(e, "    value /= 10;")
-    emit_line(e, "  } while (index > offset);")
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "")
-    emit_line(e, "static uintptr_t mt_format_append_int(mt_str target, uintptr_t offset, int32_t value) {")
-    emit_line(e, "  if (value < 0) {")
-    emit_line(e, "    offset = mt_format_append_bytes(target, offset, \"-\", 1);")
-    emit_line(e, "    return mt_format_append_ptr_uint(target, offset, (uintptr_t)(-((int64_t)value)));")
-    emit_line(e, "  }")
-    emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "")
-
-
-function emit_format_string_length_helpers(e: ref[Emitter]) -> void:
-    # --- Additional length helpers ---
-    emit_line(e, "static uintptr_t mt_format_cstr_len(const char* value) { return (uintptr_t)strlen(value); }")
-    emit_line(e, "static uintptr_t mt_format_bool_len(bool value) { return value ? 4 : 5; }")
-    emit_line(e, "static uintptr_t mt_format_ulong_len(uint64_t value) {")
-    emit_line(e, "  uintptr_t len = 1;")
-    emit_line(e, "  while (value >= 10) { value /= 10; len += 1; }")
-    emit_line(e, "  return len;")
-    emit_line(e, "}")
-    emit_line(
-        e,
-        "static uintptr_t mt_format_uint_len(uint32_t value) { return mt_format_ptr_uint_len((uintptr_t)value); }"
-    )
-    emit_line(e, "static uintptr_t mt_format_long_len(int64_t value) {")
-    emit_line(e, "  if (value < 0) return 1 + mt_format_ulong_len(((uint64_t)(-(value + 1))) + 1);")
-    emit_line(e, "  return mt_format_ulong_len((uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_float_len(float value) {")
-    emit_line(e, "  int written = snprintf(NULL, 0, \"%g\", (double)value);")
-    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure float\");")
-    emit_line(e, "  return (uintptr_t)written;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_double_len(double value) {")
-    emit_line(e, "  int written = snprintf(NULL, 0, \"%g\", value);")
-    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure double\");")
-    emit_line(e, "  return (uintptr_t)written;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_double_precision_len(double value, int32_t precision) {")
-    emit_line(e, "  int written = snprintf(NULL, 0, \"%.*f\", precision, value);")
-    emit_line(e, "  if (written < 0) mt_fatal(\"format string could not measure double precision\");")
-    emit_line(e, "  return (uintptr_t)written;")
-    emit_line(e, "}")
-
-
-function emit_format_string_append_helpers(e: ref[Emitter]) -> void:
-    # --- Additional append helpers ---
-    emit_line(e, "static uintptr_t mt_format_append_cstr(mt_str target, uintptr_t offset, const char* value) {")
-    emit_line(e, "  uintptr_t len = mt_format_cstr_len(value);")
-    emit_line(e, "  return mt_format_append_bytes(target, offset, value, len);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_bool(mt_str target, uintptr_t offset, bool value) {")
-    emit_line(
-        e,
-        "  return value ? mt_format_append_bytes(target, offset, \"true\", 4) : mt_format_append_bytes(target, offset, \"false\", 5);"
-    )
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_ulong(mt_str target, uintptr_t offset, uint64_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ulong_len(value);")
-    emit_line(e, "  uintptr_t index = offset + len;")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  target.data[index] = '\\0';")
-    emit_line(
-        e,
-        "  do { index -= 1; target.data[index] = (char)('0' + (value % 10)); value /= 10; } while (index > offset);"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_uint(mt_str target, uintptr_t offset, uint32_t value) {")
-    emit_line(e, "  return mt_format_append_ptr_uint(target, offset, (uintptr_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_long(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(e, "  if (value < 0) {")
-    emit_line(e, "    offset = mt_format_append_bytes(target, offset, \"-\", 1);")
-    emit_line(e, "    return mt_format_append_ulong(target, offset, ((uint64_t)(-(value + 1))) + 1);")
-    emit_line(e, "  }")
-    emit_line(e, "  return mt_format_append_ulong(target, offset, (uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_ulong_hex(mt_str target, uintptr_t offset, uint64_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(
-        e,
-        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llx\", (unsigned long long)value);"
-    )
-    emit_line(
-        e,
-        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_ulong_hex_upper(mt_str target, uintptr_t offset, uint64_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ulong_hex_len(value);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(
-        e,
-        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llX\", (unsigned long long)value);"
-    )
-    emit_line(
-        e,
-        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned hex\");"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_long_hex(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(
-        e,
-        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
-    )
-    emit_line(e, "  return mt_format_append_ulong_hex(target, offset, (uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_long_hex_upper(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(
-        e,
-        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_hex_upper(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
-    )
-    emit_line(e, "  return mt_format_append_ulong_hex_upper(target, offset, (uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_ulong_oct(mt_str target, uintptr_t offset, uint64_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ulong_oct_len(value);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(
-        e,
-        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%llo\", (unsigned long long)value);"
-    )
-    emit_line(
-        e,
-        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format unsigned octal\");"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_long_oct(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(
-        e,
-        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_oct(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
-    )
-    emit_line(e, "  return mt_format_append_ulong_oct(target, offset, (uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_ulong_bin(mt_str target, uintptr_t offset, uint64_t value) {")
-    emit_line(e, "  uintptr_t len = mt_format_ulong_bin_len(value);")
-    emit_line(e, "  uintptr_t index = offset + len;")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  target.data[index] = '\\0';")
-    emit_line(
-        e,
-        "  do { index -= 1; target.data[index] = (char)('0' + (value & 1)); value >>= 1; } while (index > offset);"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_long_bin(mt_str target, uintptr_t offset, int64_t value) {")
-    emit_line(
-        e,
-        "  if (value < 0) { offset = mt_format_append_bytes(target, offset, \"-\", 1); return mt_format_append_ulong_bin(target, offset, ((uint64_t)(-(value + 1))) + 1); }"
-    )
-    emit_line(e, "  return mt_format_append_ulong_bin(target, offset, (uint64_t)value);")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_float(mt_str target, uintptr_t offset, float value) {")
-    emit_line(e, "  uintptr_t len = mt_format_float_len(value);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(
-        e,
-        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", (double)value);"
-    )
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format float\");")
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(e, "static uintptr_t mt_format_append_double(mt_str target, uintptr_t offset, double value) {")
-    emit_line(e, "  uintptr_t len = mt_format_double_len(value);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(e, "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%g\", value);")
-    emit_line(e, "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double\");")
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-    emit_line(
-        e,
-        "static uintptr_t mt_format_append_double_precision(mt_str target, uintptr_t offset, double value, int32_t precision) {"
-    )
-    emit_line(e, "  uintptr_t len = mt_format_double_precision_len(value, precision);")
-    emit_line(e, "  mt_format_check_capacity(target, offset, len);")
-    emit_line(
-        e,
-        "  int written = snprintf(target.data + offset, (size_t)(target.len - offset + 1), \"%.*f\", precision, value);"
-    )
-    emit_line(
-        e,
-        "  if (written < 0 || (uintptr_t)written != len) mt_fatal(\"format string could not format double precision\");"
-    )
-    emit_line(e, "  return offset + len;")
-    emit_line(e, "}")
-
-# =============================================================================
-#  Event runtime helpers
-# =============================================================================
-
-#  Parallel / detach runtime helpers
-
-# =============================================================================
 
 function uses_parallel_runtime(program: ir.Program) -> bool:
     var i: ptr_uint = 0
@@ -8871,3 +8577,4 @@ function emit_free_foreign_cstr_helper(e: ref[Emitter]) -> void:
     emit_line(e, "static void mt_free_foreign_cstr_temp(const char* value) {")
     emit_line(e, "  free((void*)value);")
     emit_line(e, "}")
+
