@@ -8577,4 +8577,3 @@ function emit_free_foreign_cstr_helper(e: ref[Emitter]) -> void:
     emit_line(e, "static void mt_free_foreign_cstr_temp(const char* value) {")
     emit_line(e, "  free((void*)value);")
     emit_line(e, "}")
-
