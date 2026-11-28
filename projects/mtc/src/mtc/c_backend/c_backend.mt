@@ -465,19 +465,6 @@ function long_to_str(value: long) -> str:
     return buf.as_str()
 
 
-## Render a float/double literal as a C *floating-point* literal.  A whole-number
-## double like `1.0` formats as `"1"` in `%g` terms, which C parses as an `int` —
-## so a `.0` is appended when the text has no decimal point or exponent (matches
-## Ruby, which emits `1.0`).  A `float`-typed literal carries C's `f` suffix, as
-## the host emits (`0.2f`).
-public function c_float_literal(value: double, is_float32: bool) -> str:
-    let s = float_text.double_to_str(value)
-    var text = if float_literal_needs_decimal(s): strings.join_two(s, ".0") else: s
-    if is_float32:
-        return strings.join_two(text, "f")
-    return text
-
-
 function float_literal_needs_decimal(s: str) -> bool:
     var i: ptr_uint = 0
     while i < s.len:
@@ -4078,19 +4065,6 @@ public function render_static_assert(e: ref[Emitter], condition: ptr[ir.Expr], m
     return strings.join_five("_Static_assert(", render_expr(e, condition), ", ", message_text.as_str(), ");")
 
 
-public function render_stmt_expr(e: ref[Emitter], setup: span[ir.Stmt], result: ptr[ir.Expr]) -> str:
-    var buf = string.String.create()
-    buf.append("({ ")
-    var i: ptr_uint = 0
-    while i < setup.len:
-        buf.append(render_stmt_expr_stmt(e, unsafe: setup.data + i))
-        buf.append(" ")
-        i += 1
-    buf.append(render_expr(e, result))
-    buf.append("; })")
-    return buf.as_str()
-
-
 function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
@@ -4109,23 +4083,6 @@ function render_stmt_expr_stmt(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
                 return strings.join_two(render_expr(e, ex.expression), ";")
             _:
                 fatal(c"c_backend: statement-expression supports only local/assignment/expression statements")
-
-
-## The address of an operand for a `&`-style position.  A checked array index is
-## the pointer the helper already returns (no extra `*`/`&`); other operands are
-## `&expr`.
-public function render_address_of(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_checked_index as ci:
-                return strings.join_four(
-                    checked_array_index_helper_name(ci.receiver_type),
-                    "(",
-                    wrap_member_receiver(e, ci.receiver),
-                    strings.join_three(", ", render_expr(e, ci.index), ")")
-                )
-            _:
-                return render_address_of_operand(e, ep)
 
 
 function render_address_of_operand(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
@@ -4773,27 +4730,6 @@ function render_zero_initializer(t: types.Type) -> str:
             return "{ 0 }"
 
 
-## The zero value of a type in expression position.
-public function render_zero_expr(t: types.Type) -> str:
-    match t:
-        types.Type.ty_opaque as op:
-            let op_bp = unsafe: read(op.payload)
-            if op_bp.module_name.starts_with("std.c."):
-                return strings.join_four("(", c_decl(t, ""), ") ", render_zero_initializer(t))
-            return "NULL"
-        types.Type.ty_primitive as p:
-            # vec2/vec3/vec4/mat*/quat are struct-like aggregates: a bare
-            # `{ 0 }` is only valid as an initializer, so expression position
-            # needs a compound literal.
-            if is_vec_math_name(p.name):
-                return strings.join_four("(", c_type(t), ")", " { 0 }")
-            return render_zero_initializer(t)
-        types.Type.ty_str:
-            return strings.join_four("(", c_type(t), ")", " { 0 }")
-        _:
-            return strings.join_four("(", c_decl(t, ""), ") ", render_zero_initializer(t))
-
-
 ## True for an expression whose C form is a void expression (a cast to `void`,
 ## a void call).  A void expression cannot appear in a C initializer, so an
 ## aggregate field holding one renders `(expr, 0)` (the host's
@@ -4839,10 +4775,6 @@ function render_aggregate_initializer(e: ref[Emitter], fields: span[ir.Aggregate
         i += 1
     buf.append(" }")
     return buf.as_str()
-
-
-public function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[ir.AggregateField]) -> str:
-    return strings.join_four("(", c_type(ty), ")", render_aggregate_initializer(e, fields))
 
 
 ## True when `ep` is a named (non-positional) struct aggregate literal with at
@@ -4922,23 +4854,6 @@ public function emit_aggregate_with_array_call_fields(
         i += 1
 
 
-## Render an array literal in initializer position: `{ e0, e1, ... }`.  An empty
-## array literal degenerates to `{ 0 }`.  Mirrors the aggregate initializer form.
-## An array literal in expression position needs a C compound literal:
-## `(int32_t [3]) { 10, 20, 30 }`.  A bare braced list is only valid as an
-## initializer, e.g. in a local declaration.
-public function render_array_literal_expr(e: ref[Emitter], ty: types.Type, elements: span[ir.Expr]) -> str:
-    var length = array_length(ty)
-    if length == 0:
-        length = int<-elements.len
-    var buf = string.String.create()
-    buf.append("(")
-    buf.append(array_literal_cast_type(ty, length))
-    buf.append(") ")
-    buf.append(render_array_literal_initializer(e, elements))
-    return buf.as_str()
-
-
 ## The C type for an array literal's compound-literal cast, e.g.
 ## `array[array[float, 2], 6]` -> `float[6][2]`.  `c_type` alone emits
 ## `float[2][6]` (inner dimensions first), which is invalid in a cast.
@@ -4997,17 +4912,6 @@ function is_postfix_expr(ep: ptr[ir.Expr]) -> bool:
                 return false
 
 
-public function pointer_member_receiver(ep: ptr[ir.Expr]) -> bool:
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_name as n:
-                if n.pointer.unwrap_or(false):
-                    return true
-                return is_ptr_type(n.ty)
-            _:
-                return is_ptr_type(expr_result_type(ep))
-
-
 function is_ptr_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_nullable as nl:
@@ -5024,22 +4928,6 @@ function is_ptr_type(t: types.Type) -> bool:
             return (g_bp.name == "ptr" or g_bp.name == "own") and g_bp.args.len == 1
         _:
             return false
-
-
-public function render_string_literal(e: ref[Emitter], value: str, cstring: bool) -> str:
-    if cstring:
-        return c_string_literal(value)
-    let name_ptr = e.str_lit_map.get(value)
-    if name_ptr != null:
-        unsafe:
-            return read(name_ptr)
-    return strings.join_five(
-        "(mt_str){ .data = ",
-        c_string_literal(value),
-        ", .len = ",
-        ptr_uint_to_str(value.len),
-        " }"
-    )
 
 
 public function is_str_equality(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
@@ -5088,18 +4976,6 @@ function variant_c_name_for_type(ty: types.Type) -> str:
     return name
 
 
-## Render a variant equality expression as a call to the generated helper
-## (`mt_variant_eq_<variant_c_name>(left, right)`).  The leading `!` for `!=`
-## is inserted by the caller.
-public function render_variant_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
-    let variant_name = variant_c_name_for_type(expr_result_type(left))
-    let fn_name = variant_equality_helper_name(variant_name)
-    let call = strings.join_five(strings.join_two(fn_name, "("), render_expr(e, left), ", ", render_expr(e, right), ")")
-    if operator == "!=":
-        return strings.join_two("!", call)
-    return call
-
-
 ## True when the binary expression is a nullable-value `== null` or `!= null`.
 public function is_nullable_null_comparison(operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> bool:
     if not (operator == "==" or operator == "!="):
@@ -5120,21 +4996,6 @@ function is_null_literal_expr(ep: ptr[ir.Expr]) -> bool:
                 return true
             _:
                 return false
-
-
-## Render a nullable-value `== null` or `!= null` comparison as a `.has_value` check.
-public function render_nullable_null_comparison(
-    e: ref[Emitter],
-    operator: str,
-    left: ptr[ir.Expr],
-    right: ptr[ir.Expr]
-) -> str:
-    unsafe:
-        let operand = if is_null_literal_expr(left): right else: left
-        let access = strings.join_three(render_expr(e, operand), ".has_value", "")
-        if operator == "==":
-            return strings.join_two("!", access)
-        return access
 
 
 ## Static helper generation for variant equality (mirrors Ruby's
@@ -5703,17 +5564,6 @@ public function is_struct_equality(operator: str, left: ptr[ir.Expr], right: ptr
     return e.struct_eq_set.contains(lc)
 
 
-## Render a struct equality expression as a call to the generated helper
-## (`mt_struct_eq_<c_name>(left, right)`); `!=` is negated by the caller.
-public function render_struct_equality(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
-    let cname = c_type(expr_result_type(left))
-    let fn_name = struct_equality_helper_name(cname)
-    let call = strings.join_five(strings.join_two(fn_name, "("), render_expr(e, left), ", ", render_expr(e, right), ")")
-    if operator == "!=":
-        return strings.join_two("!", call)
-    return call
-
-
 ## True when `name` is a known primitive type name (mirrors types.mt
 ## `is_primitive_name` usage).  Used to filter out non-variant types.
 function is_primitive_name_from_str(name: str) -> bool:
@@ -5754,50 +5604,6 @@ public function is_value_nullable(t: types.Type) -> bool:
             return false
 
 
-public function render_call(e: ref[Emitter], callee: str, arguments: span[ir.Expr]) -> str:
-    var buf = string.String.create()
-    buf.append(callee)
-    buf.append("(")
-    var i: ptr_uint = 0
-    while i < arguments.len:
-        if i > 0:
-            buf.append(", ")
-        unsafe:
-            buf.append(render_expr(e, arguments.data + i))
-        i += 1
-    buf.append(")")
-    return buf.as_str()
-
-
-## Render a call through a function-pointer expression: `(*callee)(args)`.
-public function render_indirect_call(e: ref[Emitter], callee: ptr[ir.Expr], arguments: span[ir.Expr]) -> str:
-    let callee_text = unsafe: render_expr(e, callee)
-    let needs_wrap = not unsafe: is_postfix_expr(callee)
-    var buf = string.String.create()
-    if needs_wrap:
-        buf.append("(")
-    buf.append(callee_text)
-    if needs_wrap:
-        buf.append(")")
-    buf.append("(")
-    var i: ptr_uint = 0
-    while i < arguments.len:
-        if i > 0:
-            buf.append(", ")
-        unsafe:
-            buf.append(render_expr(e, arguments.data + i))
-        i += 1
-    buf.append(")")
-    return buf.as_str()
-
-
-public function render_binary(e: ref[Emitter], operator: str, left: ptr[ir.Expr], right: ptr[ir.Expr]) -> str:
-    let parent = binary_precedence(operator)
-    let left_text = render_binary_operand(e, left, parent, false)
-    let right_text = render_binary_operand(e, right, parent, true)
-    return strings.join_five(left_text, " ", c_operator(operator), " ", right_text)
-
-
 function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precedence: int, is_right: bool) -> str:
     let text = render_expr(e, ep)
     unsafe:
@@ -5811,48 +5617,6 @@ function render_binary_operand(e: ref[Emitter], ep: ptr[ir.Expr], parent_precede
                 return text
             _:
                 return text
-
-
-public function wrap_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
-    let text = render_expr(e, ep)
-    unsafe:
-        match read(ep):
-            ir.Expr.expr_name:
-                return text
-            ir.Expr.expr_integer_literal:
-                return text
-            ir.Expr.expr_unsigned_integer_literal:
-                return text
-            ir.Expr.expr_float_literal:
-                return text
-            ir.Expr.expr_boolean_literal:
-                return text
-            ir.Expr.expr_string_literal:
-                return text
-            ir.Expr.expr_null_literal:
-                return text
-            ir.Expr.expr_zero_init:
-                return text
-            ir.Expr.expr_member:
-                return text
-            ir.Expr.expr_index:
-                return text
-            ir.Expr.expr_call:
-                return text
-            ir.Expr.expr_aggregate_literal:
-                return text
-            ir.Expr.expr_array_literal:
-                return text
-            ir.Expr.expr_reinterpret:
-                return text
-            ir.Expr.expr_sizeof:
-                return text
-            ir.Expr.expr_alignof:
-                return text
-            ir.Expr.expr_offsetof:
-                return text
-            _:
-                return strings.join_three("(", text, ")")
 
 
 ## The condition operand of a `? :` conditional: parenthesized only when the
