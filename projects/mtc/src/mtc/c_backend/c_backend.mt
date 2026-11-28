@@ -27,6 +27,7 @@ import mtc.c_backend.reachability as reachability
 import mtc.c_backend.format_string as format_string
 import mtc.c_backend.program as program_emitter
 import mtc.c_backend.task as task_emitter
+import mtc.c_backend.statement as statement
 import mtc.strings
 
 ## The C emitter: an output buffer plus the program-global string-literal map
@@ -640,7 +641,7 @@ function emit_newline(e: ref[Emitter]) -> void:
 ## Emit `indent + text + newline` without materializing the joined line.  The
 ## joined form (`emit_line(e, join_two(indent, text))`) allocated one `String`
 ## per statement; both appends land in the output buffer either way.
-function emit_indented(e: ref[Emitter], indent: str, text: str) -> void:
+public function emit_indented(e: ref[Emitter], indent: str, text: str) -> void:
     emit_append(e, indent)
     emit_append(e, text)
     emit_newline(e)
@@ -710,7 +711,7 @@ function release_opt_struct_entries(entries: ref[vec.Vec[OptionStructEntry]]) ->
 const INDENT_SPACES: str = "                                                                "
 
 
-function indent_c(level: ptr_uint) -> str:
+public function indent_c(level: ptr_uint) -> str:
     let width = level * 2
     if width <= INDENT_SPACES.len:
         return INDENT_SPACES.slice(0, width)
@@ -2787,7 +2788,7 @@ function tuple_field_name(index: ptr_uint) -> str:
 
 ## True when an array local has a brace-initializable value (array literal or
 ## zero-init); other array values (e.g. copying another array) need `memcpy`.
-function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
+public function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_array_literal:
@@ -2800,7 +2801,7 @@ function array_direct_initializer(ep: ptr[ir.Expr]) -> bool:
 
 ## True when `ep` is a direct call whose result type is an array — such a call is
 ## emitted through the `__mt_out` out-param convention rather than by value.
-function expr_is_array_call(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
+public function expr_is_array_call(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_call as call:
@@ -2812,7 +2813,7 @@ function expr_is_array_call(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
 ## Emit an array-returning direct call with `out_arg` prepended as its first
 ## argument (the `__mt_out` out-param).  `out_arg` is already-rendered C (e.g.
 ## `&local`, `__mt_out`, or `&(target)`).
-function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str:
+public function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_call as call:
@@ -2831,7 +2832,7 @@ function emit_array_call(e: ref[Emitter], ep: ptr[ir.Expr], out_arg: str) -> str
                 return render_expr(e, ep)
 
 
-function is_array_type(t: types.Type) -> bool:
+public function is_array_type(t: types.Type) -> bool:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -2983,7 +2984,7 @@ function c_field_decl(t: types.Type, name: str) -> str:
 
 ## A C declaration `TYPE NAME`.  Array types place the length after the name
 ## (`int32_t xs[3]`); everything else in Phase 3 is a plain `TYPE NAME`.
-function c_decl(t: types.Type, name: str) -> str:
+public function c_decl(t: types.Type, name: str) -> str:
     if is_array_type(t):
         let inner_name = if name.len > 0 and name.byte_at(0) == '*': strings.join_three("(", name, ")") else: name
         let elem_t = array_element_type(t)
@@ -3981,7 +3982,7 @@ function reserve_loop_guard(e: ref[Emitter], sp: ptr[ir.Stmt]) -> void:
 
 
 ## The counter name reserved for loop `sp`, or "" when it has none.
-function loop_guard_name(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
+public function loop_guard_name(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     let key = unsafe: reinterpret[ptr_uint](sp)
     let found = e.loop_guards.get(key) else:
         return ""
@@ -4035,17 +4036,17 @@ function collect_used_labels(body: span[ir.Stmt], labels: ref[map_mod.Map[str, b
 #  Statement emission (mirrors c_backend/statements.rb)
 # =============================================================================
 
-function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
+public function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
-            emit_statement(e, body.data + i, level)
+            statement.emit_statement(e, body.data + i, level)
         i += 1
 
 
 ## Emit a `#line <n> "<path>"` directive for a line-carrying statement (debug
 ## builds only).  Mirrors Ruby's per-statement line directive.
-function emit_stmt_line_directive(e: ref[Emitter], line: ptr_uint, source_path: str) -> void:
+public function emit_stmt_line_directive(e: ref[Emitter], line: ptr_uint, source_path: str) -> void:
     if line == 0 or source_path.len == 0:
         return
     var buf = string.String.create()
@@ -4068,7 +4069,7 @@ function next_loop_guard_name(e: ref[Emitter]) -> str:
 
 
 ## Emit the per-iteration guard line for a debug-guarded loop.
-function emit_loop_guard(e: ref[Emitter], guard_name: str, level: ptr_uint) -> void:
+public function emit_loop_guard(e: ref[Emitter], guard_name: str, level: ptr_uint) -> void:
     var buf = string.String.create()
     buf.append(indent_c(level))
     buf.append("if (++")
@@ -4083,7 +4084,7 @@ function emit_loop_guard(e: ref[Emitter], guard_name: str, level: ptr_uint) -> v
 ## direct top-level array-call value, which the return/local/assignment emitters
 ## handle via the `__mt_out` convention) into a temp array local, emitting the
 ## declaration + out-param call at `level` and recording the substitution.
-function materialize_stmt_array_calls(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
+public function materialize_stmt_array_calls(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_return as r:
@@ -4174,255 +4175,11 @@ function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_
     e.array_call_temps.set(key, temp)
 
 
-function emit_statement(e: ref[Emitter], sp: ptr[ir.Stmt], level: ptr_uint) -> void:
-    let indent = indent_c(level)
-    # Materialize any array-returning call nested in argument position into a
-    # temp array local before this statement (C cannot use an array-returning
-    # call as a value/argument).  Records substitutions consumed by
-    # render_expr.
-    materialize_stmt_array_calls(e, sp, level)
-    # Debug profile: map the statement back to its source location so gdb
-    # reports the .mt line rather than the generated C line.
-    if e.emit_line_directives:
-        unsafe:
-            match read(sp):
-                ir.Stmt.stmt_local as loc:
-                    emit_stmt_line_directive(e, loc.line, loc.source_path)
-                ir.Stmt.stmt_return as r:
-                    emit_stmt_line_directive(e, r.line, r.source_path)
-                ir.Stmt.stmt_expression as ex:
-                    emit_stmt_line_directive(e, ex.line, ex.source_path)
-                _:
-                    pass
-    unsafe:
-        match read(sp):
-            ir.Stmt.stmt_static_assert as sa:
-                emit_indented(e, indent, render_static_assert(e, sa.condition, sa.message))
-                return
-            _:
-                pass
-    unsafe:
-        match read(sp):
-            ir.Stmt.stmt_return as r:
-                let value = r.value else:
-                    emit_indented(e, indent, "return;")
-                    return
-                # Array-returning function: write into `*__mt_out` (either by
-                # calling the array-returning callee with `__mt_out`, or by
-                # memcpy'ing the array value) then `return;`.
-                if is_array_type(e.current_fn_return_type):
-                    if expr_is_array_call(e, value):
-                        emit_line(e, strings.join_three(indent, emit_array_call(e, value, "__mt_out"), ";"))
-                        emit_indented(e, indent, "return;")
-                    else if array_direct_initializer(value):
-                        # `return {a, b, ...}`: an array literal can't be memcpy'd
-                        # from a bare initializer list, so bind it to a temp array
-                        # first, then copy into the out-param.
-                        emit_indented(e, indent, "{")
-                        let inner = indent_c(level + 1)
-                        emit_line(
-                            e,
-                            strings.join_five(
-                                inner,
-                                c_decl(e.current_fn_return_type, "__mt_ret"),
-                                " = ",
-                                render_initializer(e, value),
-                                ";"
-                            )
-                        )
-                        emit_indented(e, inner, "memcpy(*__mt_out, __mt_ret, sizeof(*__mt_out));")
-                        emit_indented(e, inner, "return;")
-                        emit_indented(e, indent, "}")
-                    else:
-                        emit_line(
-                            e,
-                            strings.join_six(
-                                indent,
-                                "memcpy(*__mt_out, ",
-                                render_expr(e, value),
-                                ", sizeof(*__mt_out)",
-                                ");",
-                                ""
-                            )
-                        )
-                        emit_indented(e, indent, "return;")
-                    return
-                emit_line(e, strings.join_four(indent, "return ", render_expr(e, value), ";"))
-            ir.Stmt.stmt_local as loc:
-                if is_array_type(loc.ty) and expr_is_array_call(e, loc.value):
-                    # `let a = <array-returning call>` — declare the array, then
-                    # call the callee with `&a` as its out-param.
-                    emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
-                    emit_line(
-                        e,
-                        strings.join_three(
-                            indent,
-                            emit_array_call(e, loc.value, strings.join_two("&", loc.linkage_name)),
-                            ";"
-                        )
-                    )
-                else if aggregate_has_array_call_field(e, loc.value):
-                    # `let s = S(arr = <array-returning call>, ...)` — build the
-                    # struct with the array-call field omitted, then fill it via
-                    # the callee's out-param `f(&s.arr, ...)`.
-                    unsafe:
-                        match read(loc.value):
-                            ir.Expr.expr_aggregate_literal as agg:
-                                emit_aggregate_with_array_call_fields(
-                                    e,
-                                    indent,
-                                    c_decl(loc.ty, loc.linkage_name),
-                                    loc.linkage_name,
-                                    agg.fields
-                                )
-                            _:
-                                pass
-                else if is_array_type(loc.ty) and not array_direct_initializer(loc.value):
-                    emit_line(e, strings.join_three(indent, c_decl(loc.ty, loc.linkage_name), ";"))
-                    emit_line(
-                        e,
-                        strings.join_six(
-                            indent,
-                            "memcpy(",
-                            loc.linkage_name,
-                            ", ",
-                            render_expr(e, loc.value),
-                            strings.join_three(", sizeof(", loc.linkage_name, "));")
-                        )
-                    )
-                else:
-                    emit_line(
-                        e,
-                        strings.join_five(
-                            indent,
-                            c_decl(loc.ty, loc.linkage_name),
-                            " = ",
-                            render_initializer(e, loc.value),
-                            ";"
-                        )
-                    )
-            ir.Stmt.stmt_assignment as asg:
-                # `arr = <array-returning call>` — call the callee with `&arr`.
-                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)) and expr_is_array_call(
-                    e,
-                    asg.value
-                ):
-                    let target_c = render_expr(e, asg.target)
-                    emit_line(
-                        e,
-                        strings.join_three(
-                            indent,
-                            emit_array_call(e, asg.value, strings.join_three("&(", target_c, ")")),
-                            ";"
-                        )
-                    )
-                    return
-                # `arr = {a, b, ...}` — C forbids assigning an initializer list to
-                # an array; bind it to a temp array and memcpy into the target.
-                if (
-                    asg.operator == "="
-                    and is_array_type(expr_result_type(asg.target))
-                    and array_direct_initializer(asg.value)
-                ):
-                    let target_c = render_expr(e, asg.target)
-                    let arr_ty = expr_result_type(asg.target)
-                    emit_indented(e, indent, "{")
-                    let inner = indent_c(level + 1)
-                    emit_line(
-                        e,
-                        strings.join_five(
-                            inner,
-                            c_decl(arr_ty, "__mt_arr_tmp"),
-                            " = ",
-                            render_initializer(e, asg.value),
-                            ";"
-                        )
-                    )
-                    emit_line(
-                        e,
-                        strings.join_six(inner, "memcpy(", target_c, ", __mt_arr_tmp, sizeof(__mt_arr_tmp)", ");", "")
-                    )
-                    emit_indented(e, indent, "}")
-                    return
-                # `arr = other_arr` — C forbids assigning one array to another;
-                # emit a memcpy of the whole array instead.
-                if asg.operator == "=" and is_array_type(expr_result_type(asg.target)):
-                    let target_c = render_expr(e, asg.target)
-                    emit_line(
-                        e,
-                        strings.join_six(
-                            indent,
-                            "memcpy(",
-                            target_c,
-                            ", ",
-                            render_expr(e, asg.value),
-                            strings.join_three(", sizeof(", target_c, "));")
-                        )
-                    )
-                    return
-                emit_line(
-                    e,
-                    strings.join_six(
-                        indent,
-                        render_expr(e, asg.target),
-                        " ",
-                        asg.operator,
-                        " ",
-                        strings.join_two(render_expr(e, asg.value), ";")
-                    )
-                )
-            ir.Stmt.stmt_expression as ex:
-                emit_line(e, strings.join_three(indent, render_expr(e, ex.expression), ";"))
-            ir.Stmt.stmt_block as blk:
-                if block_requires_scope(blk.body):
-                    emit_indented(e, indent, "{")
-                    emit_stmts(e, blk.body, level + 1)
-                    emit_indented(e, indent, "}")
-                else:
-                    emit_stmts(e, blk.body, level)
-            ir.Stmt.stmt_if as iff:
-                emit_if(e, iff.condition, iff.then_body, else_stmts_or_empty(iff.else_body), level)
-            ir.Stmt.stmt_while as w:
-                emit_line(e, strings.join_four(indent, "while (", render_expr(e, w.condition), ") {"))
-                if e.debug_guards:
-                    emit_loop_guard(e, loop_guard_name(e, sp), level + 1)
-                emit_stmts(e, w.body, level + 1)
-                emit_indented(e, indent, "}")
-            ir.Stmt.stmt_for as f:
-                var header = string.String.create()
-                header.append(indent)
-                header.append("for (")
-                header.append(render_for_clause(e, f.init))
-                header.append("; ")
-                header.append(render_expr(e, f.condition))
-                header.append("; ")
-                header.append(render_for_clause(e, f.post))
-                header.append(") {")
-                emit_line(e, header.as_str())
-                if e.debug_guards:
-                    emit_loop_guard(e, loop_guard_name(e, sp), level + 1)
-                emit_stmts(e, f.body, level + 1)
-                emit_indented(e, indent, "}")
-            ir.Stmt.stmt_switch as sw:
-                emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
-            ir.Stmt.stmt_goto as g:
-                emit_line(e, strings.join_four(indent, "goto ", g.label, ";"))
-            ir.Stmt.stmt_label as lbl:
-                if e.used_labels.contains(lbl.name):
-                    emit_line(e, strings.join_three(indent, lbl.name, ":;"))
-            ir.Stmt.stmt_break:
-                emit_indented(e, indent, "break;")
-            ir.Stmt.stmt_continue:
-                emit_indented(e, indent, "continue;")
-            _:
-                fatal(c"c_backend: unsupported statement")
-
-
 ## Emit a `switch`.  Non-default cases are `case VALUE: { body [break;] }`; a `_`
 ## arm is `default: { body [break;] }`; and an exhaustive switch with no explicit
 ## default gets `default: __builtin_unreachable();`.  Mirrors the switch path in
 ## c_backend/statements.rb.
-function emit_switch(
+public function emit_switch(
     e: ref[Emitter],
     expression: ptr[ir.Expr],
     cases: span[ir.SwitchCase],
@@ -4486,7 +4243,7 @@ function statement_terminates(sp: ptr[ir.Stmt]) -> bool:
 
 ## True when a block introduces a local declaration and therefore needs its own
 ## C scope (`{ ... }`) — mirrors c_backend/statements.rb block_requires_scope?.
-function block_requires_scope(body: span[ir.Stmt]) -> bool:
+public function block_requires_scope(body: span[ir.Stmt]) -> bool:
     var i: ptr_uint = 0
     while i < body.len:
         unsafe:
@@ -4511,7 +4268,7 @@ public function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir
 
 ## Emit an `if` and its else chain, re-flattening a single-`if` else body back
 ## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
-function emit_if(
+public function emit_if(
     e: ref[Emitter],
     condition: ptr[ir.Expr],
     then_body: span[ir.Stmt],
@@ -4546,7 +4303,7 @@ function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
 ## c_backend/statements.rb emit_for_clause_statement.
-function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
+public function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
     unsafe:
         match read(sp):
             ir.Stmt.stmt_local as loc:
@@ -4568,7 +4325,7 @@ function render_for_clause(e: ref[Emitter], sp: ptr[ir.Stmt]) -> str:
 #  Expression emission (mirrors c_backend/expressions.rb)
 # =============================================================================
 
-function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+public function render_expr(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     # An array-returning call hoisted into a temp (materialized before the
     # enclosing statement) renders as the temp name instead of re-emitting the
     # call (which C cannot use in value position).
@@ -5381,7 +5138,7 @@ public function emit_checked_span_index_helper(e: ref[Emitter], receiver_type: t
 ## The initializer form of a value (aggregate literals use `{ ... }` without a
 ## compound-literal cast); everything else is an ordinary expression.  Mirrors
 ## c_backend/expressions.rb render_initializer.
-function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
+public function render_initializer(e: ref[Emitter], ep: ptr[ir.Expr]) -> str:
     unsafe:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
@@ -5562,7 +5319,7 @@ function render_aggregate_literal(e: ref[Emitter], ty: types.Type, fields: span[
 ## (*__mt_out)[N], ...)` out-param convention); the field is filled with an
 ## out-param call after the struct is built (see
 ## emit_aggregate_with_array_call_fields).
-function aggregate_has_array_call_field(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
+public function aggregate_has_array_call_field(e: ref[Emitter], ep: ptr[ir.Expr]) -> bool:
     unsafe:
         match read(ep):
             ir.Expr.expr_aggregate_literal as agg:
@@ -5609,7 +5366,7 @@ function render_aggregate_omitting_array_calls(e: ref[Emitter], fields: span[ir.
 ## Emit `<decl> = { non-array-call fields }; f(&<target>.field, args);` for a
 ## struct aggregate with array-returning-call fields.  `target_ref` is the C
 ## lvalue of the struct (e.g. `light`).
-function emit_aggregate_with_array_call_fields(
+public function emit_aggregate_with_array_call_fields(
     e: ref[Emitter],
     indent: str,
     decl: str,
@@ -6650,7 +6407,7 @@ function binary_precedence(operator: str) -> int:
 #  IR expression result type (for str-equality detection)
 # =============================================================================
 
-function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
+public function expr_result_type(ep: ptr[ir.Expr]) -> types.Type:
     unsafe:
         match read(ep):
             ir.Expr.expr_name as x:

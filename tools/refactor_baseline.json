@@ -183,6 +183,7 @@
     "c_backend.format_string": "format_string",
     "c_backend.program": "program_emitter",
     "c_backend.reachability": "reachability",
+    "c_backend.statement": "statement",
     "c_backend.task": "task_emitter",
     "c_naming": "naming",
     "cli_help": "cli_help",
@@ -1601,7 +1602,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148734,
+    "total_code": 148741,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1660,8 +1661,8 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 7787,
-        "code": 6428,
+        "lines": 7544,
+        "code": 6209,
         "max_line": 237,
         "max_function": 270
       },
@@ -1682,6 +1683,12 @@
         "code": 389,
         "max_line": 119,
         "max_function": 76
+      },
+      "projects/mtc/src/mtc/c_backend/statement.mt": {
+        "lines": 253,
+        "code": 226,
+        "max_line": 140,
+        "max_function": 242
       },
       "projects/mtc/src/mtc/c_backend/task.mt": {
         "lines": 400,
