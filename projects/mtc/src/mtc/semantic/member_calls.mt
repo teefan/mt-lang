@@ -309,3 +309,147 @@ public function member_parameter_info(
             return true
         Option.none:
             return false
+
+public function check_imported_member_depth(
+    ctx: ref[analyzer.Context],
+    module_name: str,
+    type_name: str,
+    member: str,
+    args: span[types.Type],
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint,
+    depth: int
+) -> types.Type:
+    if depth > 10:
+        return types.Type.ty_error
+    let binding_ptr = analyzer.find_binding(ctx, module_name) else:
+        return types.Type.ty_error
+
+    unsafe:
+        let binding = read(binding_ptr)
+        let fields_ptr = binding.structs.get(type_name)
+        if fields_ptr != null:
+            let fields = read(fields_ptr)
+            var i: ptr_uint = 0
+            while i < fields.len:
+                let fe = read(fields.data + i)
+                if fe.name == member:
+                    return analyzer.member_call_result_type(
+                        analyzer.substituted_field_type(binding, type_name, args, fe.ty),
+                        is_method_call
+                    )
+                i += 1
+
+        let union_ptr = binding.unions.get(type_name)
+        if union_ptr != null:
+            let ufields = read(union_ptr)
+            var ui: ptr_uint = 0
+            while ui < ufields.len:
+                let ufe = read(ufields.data + ui)
+                if ufe.name == member:
+                    return analyzer.member_call_result_type(
+                        analyzer.substituted_field_type(binding, type_name, args, ufe.ty),
+                        is_method_call
+                    )
+                ui += 1
+
+        # A private type reached through a public signature (a function whose
+        # return type is a module-private struct) still resolves its fields.
+        let private_fields_ptr = binding.private_structs.get(type_name)
+        if private_fields_ptr != null:
+            let fields = read(private_fields_ptr)
+            var pi: ptr_uint = 0
+            while pi < fields.len:
+                let fe = read(fields.data + pi)
+                if fe.name == member:
+                    return analyzer.member_call_result_type(
+                        analyzer.substituted_field_type(binding, type_name, args, fe.ty),
+                        is_method_call
+                    )
+                pi += 1
+
+        let private_union_ptr = binding.private_unions.get(type_name)
+        if private_union_ptr != null:
+            let ufields = read(private_union_ptr)
+            var pui: ptr_uint = 0
+            while pui < ufields.len:
+                let ufe = read(ufields.data + pui)
+                if ufe.name == member:
+                    return analyzer.member_call_result_type(
+                        analyzer.substituted_field_type(binding, type_name, args, ufe.ty),
+                        is_method_call
+                    )
+                pui += 1
+
+        if member == "with" or analyzer.binding_has_member(binding, type_name, member):
+            return types.Type.ty_error
+
+    # A method this module declares on the receiver's type (`extending
+    # b3.Vec3:` for a receiver that resolved to the C struct `b3Vec3`) lives in
+    # the current module's method keys, not in any imported binding.
+    if analyzer.has_method(ctx, type_name, member):
+        return types.Type.ty_error
+
+    # Follow a type alias to its source module when the member is not found
+    # directly (e.g. `public type uv_run_mode = c.uv_run_mode` re-exports an
+    # external enum whose members live in the source external module).
+    match analyzer.follow_type_alias(ctx, binding_ptr, type_name):
+        Option.some as source_info:
+            return check_imported_member_depth(
+                ctx,
+                source_info.value.module_name,
+                source_info.value.type_name,
+                member,
+                span[types.Type](),
+                is_method_call,
+                line,
+                column,
+                depth + 1
+            )
+        Option.none:
+            pass
+
+    # Reverse-alias search: `extending` methods on a re-exported type live in
+    # the aliasing module's binding under the local alias name (e.g.
+    # `type Image = c.Image` + `extending Image:` in std.raylib registers
+    # `Image.draw_pixel` there, while the receiver type resolved to the source
+    # module std.c.raylib).  Scan visible bindings for an alias that resolves
+    # to this exact imported type and check its member keys.
+    if alias_binding_has_member(ctx, module_name, type_name, member):
+        return types.Type.ty_error
+
+    if is_method_call:
+        analyzer.report(ctx, line, column, analyzer.unknown_member_message("method", type_name, member))
+    else:
+        analyzer.report(ctx, line, column, analyzer.unknown_member_message("field", type_name, member))
+    return types.Type.ty_error
+
+
+## True when any visible module binding re-exports `module_name.type_name`
+## through a type alias and declares `member` on that alias via `extending`.
+public function alias_binding_has_member(ctx: ref[analyzer.Context], module_name: str, type_name: str, member: str) -> bool:
+    let imported = ctx.imported_modules else:
+        return false
+    unsafe:
+        var binding_entries = read(imported).entries()
+        while binding_entries.next():
+            let entry = binding_entries.current()
+            let candidate = read(entry.value)
+            # A module that declares `extending <alias>.<Type>:` on an imported
+            # type registers the method under the *resolved* name (`b3Vec3`),
+            # which is exactly what this receiver resolved to.
+            if analyzer.binding_has_member(candidate, type_name, member):
+                return true
+            var alias_entries = candidate.type_alias_types.entries()
+            while alias_entries.next():
+                let alias_entry = alias_entries.current()
+                match read(alias_entry.value):
+                    types.Type.ty_imported as im:
+                        let im_bp = unsafe: read(im.payload)
+                        if im_bp.module_name == module_name and im_bp.name == type_name:
+                            if analyzer.binding_has_member(candidate, read(alias_entry.key), member):
+                                return true
+                    _:
+                        pass
+    return false
