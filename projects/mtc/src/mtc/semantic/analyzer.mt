@@ -6867,7 +6867,7 @@ function harmonize_float_binary_operands(
         record_expr_type(ctx, right, lt)
 
 
-function is_vec_math_name(name: str) -> bool:
+public function is_vec_math_name(name: str) -> bool:
     return (
         name == "vec2" or name == "vec3" or name == "vec4"
         or name == "ivec2" or name == "ivec3" or name == "ivec4"
@@ -6956,7 +6956,7 @@ function is_float_literal_expr(ep: ptr[ast.Expr]) -> bool:
                 return false
 
 
-function primitive_type_name_static(t: types.Type) -> str:
+public function primitive_type_name_static(t: types.Type) -> str:
     match t:
         types.Type.ty_primitive as p:
             return p.name
@@ -7057,7 +7057,7 @@ function call_parameter_info(
             ast.Expr.expr_identifier as id:
                 return identifier_parameter_info(ctx, scope, id.name, name_out, sig_out)
             ast.Expr.expr_member_access as ma:
-                return member_parameter_info(ctx, scope, ma.receiver, ma.member_name, name_out, sig_out)
+                return member_calls.member_parameter_info(ctx, scope, ma.receiver, ma.member_name, name_out, sig_out)
             ast.Expr.expr_specialization as spec:
                 return specialization_parameter_info(ctx, scope, spec.callee, name_out, sig_out)
             _:
@@ -7080,80 +7080,6 @@ function identifier_parameter_info(
     unsafe:
         read(sig_out) = read(sig_ptr)
     return true
-
-
-## A member call's signature: an imported function (`lib.f`, `heap.must_alloc`),
-## a static struct method (`Counter.make`) or an instance method on a value.
-## `with` is the aggregate-copy / simd builtin (named arguments are field names
-## or rejected), so it never canonicalizes.
-function member_parameter_info(
-    ctx: ref[Context],
-    scope: ref[sscope.Scope],
-    receiver: ptr[ast.Expr],
-    member: str,
-    name_out: ref[str],
-    sig_out: ref[FnSig]
-) -> bool:
-    if member == "with":
-        return false
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as rid:
-                if scope_get(scope, rid.name) == null and ctx.import_aliases.contains(rid.name):
-                    let module_name_ptr = ctx.import_aliases.get(rid.name)
-                    if module_name_ptr == null:
-                        return false
-                    let binding_ptr = find_binding(ctx, read(module_name_ptr))
-                    if binding_ptr == null:
-                        return false
-                    let sig_ptr = read(binding_ptr).functions.get(member)
-                    if sig_ptr == null:
-                        return false
-                    read(name_out) = member
-                    read(sig_out) = read(sig_ptr)
-                    return true
-            _:
-                pass
-
-    match static_struct_receiver_type(ctx, scope, receiver):
-        Option.some as static_type:
-            match resolve_method_sig(ctx, static_type.value, member):
-                Option.some as sig:
-                    unsafe:
-                        read(name_out) = member
-                        read(sig_out) = sig.value
-                    return true
-                Option.none:
-                    pass
-        Option.none:
-            pass
-
-    unsafe:
-        match read(receiver):
-            ast.Expr.expr_identifier as rid:
-                let rtp = scope_get(scope, rid.name)
-                if rtp == null:
-                    return false
-                let recv_ty = unwrap_ref(read(rtp))
-                match resolve_method_sig(ctx, recv_ty, member):
-                    Option.some as sig:
-                        read(name_out) = member
-                        read(sig_out) = sig.value
-                        return true
-                    Option.none:
-                        return false
-            _:
-                pass
-
-    let recv = unwrap_ref(infer_expr(ctx, scope, receiver))
-    match resolve_method_sig(ctx, recv, member):
-        Option.some as sig:
-            unsafe:
-                read(name_out) = member
-                read(sig_out) = sig.value
-            return true
-        Option.none:
-            return false
 
 
 ## A specialization's signature: a local/imported generic function
@@ -8509,7 +8435,7 @@ function check_simd_call(
 
 ## `v.with(lane, value)` returns a copy of `v` with one lane replaced.  The
 ## lane index must be an integer and the value assignable to the element type.
-function check_simd_with_call(
+public function check_simd_with_call(
     ctx: ref[Context],
     simd_ty: types.Type,
     args: span[ast.Argument],
@@ -9212,86 +9138,9 @@ public function project_pointer_receiver(t: types.Type) -> types.Type:
             return t
 
 
-## Resolve and check a method call against a known receiver type (local or
-## imported): argument-check the signature and flow its return type, or fall back
-## to a member-existence check when no signature is known.
-public function check_typed_method_call(
-    ctx: ref[Context],
-    receiver_type: types.Type,
-    method_name: str,
-    args: span[ast.Argument],
-    arg_types: span[types.Type],
-    any_named: bool,
-    line: ptr_uint,
-    column: ptr_uint
-) -> types.Type:
-    if types.is_simd_type(receiver_type):
-        if method_name == "with":
-            check_simd_with_call(ctx, receiver_type, args, arg_types, any_named, line, column)
-            return receiver_type
-        report(ctx, line, column, unknown_member_message("method", types.type_to_string(receiver_type), method_name))
-        return types.Type.ty_error
-    # A native vec/mat/quat `with` yields the receiver's own type with one field
-    # replaced (the host's `check_struct_with_call`): `v3.with(x = 99.0)` -> vec3.
-    if method_name == "with" and is_vec_math_name(primitive_type_name_static(receiver_type)):
-        return receiver_type
-    match resolve_method_sig(ctx, receiver_type, method_name):
-        Option.some as sig:
-            check_signature_call(ctx, method_name, sig.value, args, arg_types, any_named, line, column)
-            var type_name: Option[str] = Option[str].none
-            match receiver_type:
-                types.Type.ty_named as n:
-                    let n_np = unsafe: read(n.payload)
-                    type_name = Option[str].some(value = n_np.name)
-                _:
-                    pass
-            match type_name:
-                Option.some as tn:
-                    let key = method_key(tn.value, method_name)
-                    let tps_ptr = ctx.method_type_params.get(key)
-                    if tps_ptr != null:
-                        var subs = map_mod.Map[str, types.Type].create()
-                        unify_call_args(sig.value.params, arg_types, ref_of(subs))
-                        unsafe: validate_inferred_type_args(ctx, read(tps_ptr), ref_of(subs), line, column)
-                        return substitute_type(sig.value.return_type, ref_of(subs))
-                Option.none:
-                    pass
-            # A generic receiver carries its own type arguments, which substitute
-            # the type's declared parameters in the method's signature
-            # (`Option[int].unwrap()` -> `int`, `Vec[int].first()` -> `ptr[int]`).
-            match receiver_type:
-                types.Type.ty_generic as g:
-                    let g_bp = unsafe: read(g.payload)
-                    match receiver_type_param_names(ctx, g_bp.name):
-                        Option.some as pnames:
-                            var subs = map_mod.Map[str, types.Type].create()
-                            defer: subs.release()
-                            var pi: ptr_uint = 0
-                            while pi < pnames.value.len and pi < g_bp.args.len:
-                                unsafe:
-                                    subs.set(read(pnames.value.data + pi), read(g_bp.args.data + pi))
-                                pi += 1
-                            return substitute_type(sig.value.return_type, ref_of(subs))
-                        Option.none:
-                            pass
-                _:
-                    pass
-            return sig.value.return_type
-        Option.none:
-            let member_ty = check_member(ctx, receiver_type, method_name, true, line, column)
-            match member_ty:
-                types.Type.ty_function as callable:
-                    let ft = unsafe: read(callable.payload)
-                    let sig = function_field_signature(method_name, ft)
-                    check_signature_call(ctx, method_name, sig, args, arg_types, any_named, line, column)
-                    return unsafe: read(ft.return_type)
-                _:
-                    return member_ty
-
-
 ## A callable field is called like a method: `task.ready(task.frame)`.  Its
 ## `fn(...)` type supplies the parameter and return types for the call.
-function function_field_signature(name: str, ft: types.FunctionType) -> FnSig:
+public function function_field_signature(name: str, ft: types.FunctionType) -> FnSig:
     var params = vec.Vec[ParamEntry].create()
     var i: ptr_uint = 0
     while i < ft.params.len:
@@ -9314,7 +9163,7 @@ function function_field_signature(name: str, ft: types.FunctionType) -> FnSig:
 ## The declared type-parameter *names* of a receiver's generic type — the
 ## substitution domain for its methods' signatures.  The prelude variants'
 ## parameters (`Option` -> `[T]`) and a declared type's (`Vec` -> `[T]`).
-function receiver_type_param_names(ctx: ref[Context], type_name: str) -> Option[span[str]]:
+public function receiver_type_param_names(ctx: ref[Context], type_name: str) -> Option[span[str]]:
     let variant_params = ctx.variant_param_names.get(type_name)
     if variant_params != null:
         return Option[span[str]].some(value = unsafe: read(variant_params))
@@ -10454,7 +10303,7 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
 ## `with`; anything else is reported ("unknown field" for a read, "unknown
 ## method" when the member is the callee of a call).  Field reads yield the
 ## field type; everything else (methods, non-struct receivers) is permissive.
-function check_member(
+public function check_member(
     ctx: ref[Context],
     receiver: types.Type,
     member: str,
@@ -11269,7 +11118,7 @@ function check_call(
 ## `args` is the original call argument expression list, used to gate
 ## narrowing-int checks on numeric literal sources (mirroring Ruby's
 ## exact_compile_time_numeric_compatibility?).
-function check_signature_call(
+public function check_signature_call(
     ctx: ref[Context],
     display_name: str,
     sig: FnSig,
@@ -11576,7 +11425,7 @@ public function arity_message(name: str, expected: ptr_uint, got: ptr_uint) -> s
     return diag.arity_message(name, expected, got)
 
 
-function unknown_member_message(kind: str, type_name: str, member: str) -> str:
+public function unknown_member_message(kind: str, type_name: str, member: str) -> str:
     return diag.unknown_member_message(kind, type_name, member)
 
 
