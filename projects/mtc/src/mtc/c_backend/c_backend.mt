@@ -28,6 +28,7 @@ import mtc.c_backend.format_string as format_string
 import mtc.c_backend.program as program_emitter
 import mtc.c_backend.task as task_emitter
 import mtc.c_backend.statement as statement
+import mtc.c_backend.driver as driver
 import mtc.strings
 
 ## The C emitter: an output buffer plus the program-global string-literal map
@@ -148,10 +149,16 @@ struct GenericVariantInfo:
 ## declarations use the declared C spelling (mirrors Ruby's std_c_backing).
 var std_c_backing_names: ptr[map_mod.Map[str, str]]? = null
 
+public function set_std_c_backing_names(value: ptr[map_mod.Map[str, str]]?) -> void:
+    std_c_backing_names = value
+
 ## Declared opaques' C backing names (`std_sdl3_Window` -> `SDL_Window`),
 ## populated by `generate_c` from the program's opaque decls so `c_type` renders
 ## opaque values as their backing type (mirrors Ruby's `opaque_c_type_name`).
 var opaque_backing_names: ptr[map_mod.Map[str, str]]? = null
+
+public function set_opaque_backing_names(value: ptr[map_mod.Map[str, str]]?) -> void:
+    opaque_backing_names = value
 
 ## Opt types that need synthetic StructDecl entries for topological ordering.
 ## `decl` is the StructDecl; `field_store` keeps the field spans alive.
@@ -166,7 +173,7 @@ public function generate_c(
     debug_guards: bool,
     export_public: bool
 ) -> string.String:
-    return generate_c_impl(input_program, emit_line_directives, debug_guards, export_public, null)
+    return driver.generate_c_impl(input_program, emit_line_directives, debug_guards, export_public, null)
 
 
 public function generate_c_split(
@@ -176,7 +183,7 @@ public function generate_c_split(
     export_public: bool,
     output: ref[SplitOutput]
 ) -> void:
-    var ignored = generate_c_impl(
+    var ignored = driver.generate_c_impl(
         input_program,
         emit_line_directives,
         debug_guards,
@@ -186,281 +193,9 @@ public function generate_c_split(
     ignored.release()
 
 
-function generate_c_impl(
-    input_program: ir.Program,
-    emit_line_directives: bool,
-    debug_guards: bool,
-    export_public: bool,
-    split: ptr[SplitOutput]?
-) -> string.String:
-    var program = input_program
-    # Concrete generic struct instances are carried outside the IR's `:structs`
-    # section (host parity).  Merge them into the declaration list the backend
-    # sorts and emits, so their fields participate in every scan below.
-    if program.monomorphized_structs.len > 0 or program.str_buffer_structs.len > 0:
-        var merged = vec.Vec[ir.StructDecl].create()
-        var mi: ptr_uint = 0
-        while mi < program.structs.len:
-            merged.push(unsafe: read(program.structs.data + mi))
-            mi += 1
-        mi = 0
-        while mi < program.monomorphized_structs.len:
-            merged.push(unsafe: read(program.monomorphized_structs.data + mi))
-            mi += 1
-        mi = 0
-        while mi < program.str_buffer_structs.len:
-            merged.push(unsafe: read(program.str_buffer_structs.data + mi))
-            mi += 1
-        program = ir.Program(
-            module_name = program.module_name,
-            includes = program.includes,
-            constants = program.constants,
-            globals = program.globals,
-            opaques = program.opaques,
-            structs = merged.as_span(),
-            unions = program.unions,
-            enums = program.enums,
-            variants = program.variants,
-            static_asserts = program.static_asserts,
-            functions = program.functions,
-            type_aliases = program.type_aliases,
-            source_path = program.source_path,
-            monomorphized_structs = program.monomorphized_structs,
-            monomorphized_variants = program.monomorphized_variants,
-            external_structs = program.external_structs,
-            str_buffer_structs = program.str_buffer_structs,
-            arena = program.arena,
-        )
-    var e = Emitter(
-        buffer = string.String.create(),
-        str_lit_map = map_mod.Map[str, str].create(),
-        used_labels = map_mod.Map[str, bool].create(),
-        variant_eq_set = map_mod.Map[str, bool].create(),
-        variant_decl_by_name = map_mod.Map[str, ir.VariantDecl].create(),
-        struct_eq_set = map_mod.Map[str, bool].create(),
-        external_eq_fields = map_mod.Map[str, span[ir.Field]].create(),
-        opt_type_set = map_mod.Map[str, types.Type].create(),
-        std_c_backing = map_mod.Map[str, str].create(),
-        split_mode = split != null,
-        split_target = 0,
-        split_header = string.String.create(),
-        split_data = string.String.create(),
-        split_unit_names = vec.Vec[string.String].create(),
-        split_unit_sources = vec.Vec[string.String].create(),
-        split_unit_index = 0,
-    )
-    var backing_map = collect_std_c_backing(program)
-    let backing_map_ptr = heap.must_alloc[map_mod.Map[str, str]](1)
-    unsafe:
-        read(backing_map_ptr) = backing_map
-    std_c_backing_names = backing_map_ptr
-    var opaque_backing_map = collect_opaque_backings(program)
-    let opaque_backing_map_ptr = heap.must_alloc[map_mod.Map[str, str]](1)
-    unsafe:
-        read(opaque_backing_map_ptr) = opaque_backing_map
-    opaque_backing_names = opaque_backing_map_ptr
-    e.current_fn_return_type = types.primitive("void")
-    e.emit_line_directives = emit_line_directives
-    e.debug_guards = debug_guards
-    e.loop_guard_id = 0
-    e.loop_guards = map_mod.Map[ptr_uint, str].create()
-    e.current_fn_linkage = ""
-    e.array_call_temps = map_mod.Map[ptr_uint, str].create()
-    e.array_call_temp_counter = 0
-    var opaques = map_mod.Map[str, bool].create()
-    var oi: ptr_uint = 0
-    while oi < program.opaques.len:
-        unsafe:
-            let od = read(program.opaques.data + oi)
-            opaques.set(od.name, true)
-            opaques.set(od.linkage_name, true)
-            match od.source_module:
-                Option.some as src:
-                    opaques.set(naming.qualified_c_name(src.value, od.name), true)
-                Option.none:
-                    pass
-            let bare = extract_bare_name(od.name)
-            if bare.len > 0:
-                opaques.set(bare, true)
-        oi += 1
-
-    # Reachability pruning: emit only functions reachable from the entry points,
-    # in source order (mirrors c_backend/reachability.rb emitted_functions).
-    var emitted = reachability.emitted_functions(program)
-    let funcs = emitted.as_span()
-
-    # One variant lookup for the whole generation: `program.variants` plus the
-    # concretely-instantiated `Option`/`Result` instances lowering keeps outside
-    # the IR's `:variants` section.  `collect_generic_variants` walks every
-    # declaration and expression, so it runs exactly once here rather than on
-    # each lookup.
-    var gv_i: ptr_uint = 0
-    while gv_i < program.variants.len:
-        unsafe:
-            let vd = read(program.variants.data + gv_i)
-            e.variant_decl_by_name.set(vd.linkage_name, vd)
-        gv_i += 1
-    var gen_variants = collect_generic_variants(program)
-    gv_i = 0
-    while gv_i < gen_variants.len():
-        let gv_ptr = gen_variants.get(gv_i) else:
-            break
-        unsafe:
-            let vd = read(gv_ptr)
-            e.variant_decl_by_name.set(vd.linkage_name, vd)
-        gv_i += 1
-
-    # Pre-scan functions for aggregate equality to know which helpers to emit
-    # and whether the str-equality helper is required by a helper body.
-    scan_variant_equality(ref_of(e), funcs, program)
-
-    # Slice helpers (`mt_str_slice`, `mt_span_slice_<T>`) used by the program.
-    var slice_has_str = false
-    var slice_has_str_index = false
-    var slice_has_str_concat = false
-    var slice_span_types = vec.Vec[types.Type].create()
-    collect_slice_helpers(
-        funcs,
-        ref_of(slice_has_str),
-        ref_of(slice_has_str_index),
-        ref_of(slice_has_str_concat),
-        ref_of(slice_span_types)
-    )
-    var str_lits = collect_str_literals(funcs)
-    var li: ptr_uint = 0
-    while li < str_lits.len():
-        let value_ptr = str_lits.get(li) else:
-            break
-        unsafe:
-            e.str_lit_map.set(read(value_ptr), str_literal_name(li))
-        li += 1
-    let has_str_literals = str_lits.len() > 0
-    var checked_index_types = collect_checked_index_types(funcs)
-    var checked_span_index_types = collect_checked_span_index_types(funcs)
-    var tuple_types = filter_declared_tuple_types(collect_tuple_types(funcs, program, ref_of(gen_variants)), program)
-    var opt_structs = collect_opt_struct_decls(program, ref_of(opaques))
-    # Bounds-checked accessors call mt_fatal, so their presence pulls in the
-    # fatal helper (and, via uses_string_view, the mt_str type + <stdlib.h>).
-    let use_fatal = e.debug_guards or uses_fatal_helper(
-        funcs,
-        program
-    ) or checked_index_types.len() > 0 or checked_span_index_types.len() > 0 or uses_format_helpers(program) or uses_foreign_cstr_helper(funcs) or slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0
-    let use_fatal_str = uses_fatal_str_helper(funcs)
-    let use_entry_argv = uses_entry_argv(program)
-    let use_string_view = uses_string_view(
-        funcs,
-        has_str_literals
-    ) or use_fatal or use_fatal_str or aggregates_use_str(program) or gen_variants_have_str(ref_of(gen_variants)) or use_entry_argv or slice_has_str or slice_has_str_index or slice_has_str_concat
-    let use_str_equality = uses_str_equality(funcs) or equality_helpers_need_str(ref_of(e), program)
-    var simd_types = collect_simd_types(funcs, program)
-    if e.split_mode:
-        e.split_target = 1
-
-    # Feature-test macros, includes, forward declarations, and the fixed helper
-    # types/emitters that precede the program's own declarations.
-    emit_preamble(
-        ref_of(e), program, funcs, use_fatal, use_fatal_str, use_entry_argv, use_string_view,
-        use_str_equality, slice_has_str_concat, simd_types
-    )
-
-    # Span types are collected over *all* lowered functions, matching the
-    # generic-instance and struct collection: an instance (a pruned function's
-    # `Option[span[X]]`, say) embeds the span by value, so its typedef must exist
-    # even when the function that named it is not emitted.
-    var span_types = collect_span_types(program.functions)
-    collect_struct_span_types(program, ref_of(span_types))
-    collect_variant_span_types(program, ref_of(span_types))
-
-    # Emit runtime helpers before forward declarations (mirrors Ruby order).
-    emit_runtime_helpers(ref_of(e), program, funcs)
-    program_emitter.emit_program_types(ref_of(e), program, span_types, tuple_types, gen_variants, opt_structs, funcs)
-    if e.split_mode:
-        prepare_split_units(ref_of(e), funcs, program.module_name)
-    program_emitter.emit_program_bodies(
-        ref_of(e),
-        program,
-        funcs,
-        export_public,
-        checked_index_types,
-        checked_span_index_types,
-        has_str_literals,
-        str_lits,
-        slice_has_str,
-        slice_has_str_index,
-        slice_has_str_concat,
-        slice_span_types,
-        use_entry_argv
-    )
-
-    var result = string.String.create()
-    if split != null:
-        let output = split
-        e.split_target = 0
-        var header_text = trim_string(e.split_header)
-        var final_header = string.String.create()
-        final_header.append("#ifndef MTC_SPLIT_HEADER_H\n#define MTC_SPLIT_HEADER_H\n")
-        final_header.append(header_text.as_str())
-        final_header.append("#endif\n")
-        header_text.release()
-        unsafe:
-            read(output).header.release()
-            read(output).header = final_header
-
-        var data_text = trim_string(e.split_data)
-        var final_data = string.String.create()
-        final_data.append("#include \"mtc.h\"\n")
-        final_data.append(data_text.as_str())
-        data_text.release()
-        unsafe:
-            read(output).data.release()
-            read(output).data = final_data
-
-        var units = vec.Vec[SplitUnit].create()
-        var ui: ptr_uint = 0
-        while ui < e.split_unit_sources.len():
-            let name_ptr = e.split_unit_names.get(ui) else:
-                break
-            let source_ptr = e.split_unit_sources.get(ui) else:
-                break
-            var unit = SplitUnit(
-                module_name = string.String.from_str(unsafe: read(name_ptr).as_str()),
-                source = string.String.create()
-            )
-            unit.source.append("#include \"mtc.h\"\n")
-            var unit_text = trim_string(unsafe: read(source_ptr))
-            unit.source.append(unit_text.as_str())
-            unit_text.release()
-            units.push(unit)
-            ui += 1
-        unsafe:
-            read(output).units.release()
-            read(output).units = units
-    else:
-        result.release()
-        result = trim_string(e.buffer)
-    # Everything the emitter accumulated is dead once `result` is built: the
-    # output buffer, the per-generation lookup tables, the collected type/func
-    # sets and the two module-level backing-name maps.  They used to be left to
-    # process exit, which cost ~80 MB per call (`--keep-c` emits twice, `mtc test`
-    # once per fixture).
-    e.buffer.release()
-    release_emitter_tables(ref_of(e))
-    emitted.release()
-    gen_variants.release()
-    str_lits.release()
-    checked_index_types.release()
-    checked_span_index_types.release()
-    tuple_types.release()
-    release_opt_struct_entries(ref_of(opt_structs))
-    opaques.release()
-    simd_types.release()
-    span_types.release()
-    return result
-
-
 ## Rstrip trailing whitespace and append one newline, matching the single-file
 ## output shape.
-function trim_string(input: string.String) -> string.String:
+public function trim_string(input: string.String) -> string.String:
     let text = input.as_str()
     var end = text.len
     while end > 0:
@@ -477,7 +212,7 @@ function trim_string(input: string.String) -> string.String:
 
 ## One unit per module that contributes an emitted function.  Synthetic
 ## functions without an owner go to the root unit.
-function prepare_split_units(e: ref[Emitter], funcs: span[ir.Function], root_module: str) -> void:
+public function prepare_split_units(e: ref[Emitter], funcs: span[ir.Function], root_module: str) -> void:
     var i: ptr_uint = 0
     while i < funcs.len:
         let f = unsafe: read(funcs.data + i)
@@ -508,7 +243,7 @@ public function split_unit_index_for(e: ref[Emitter], module_name: str) -> ptr_u
 
 ## Emit the feature-test macros, deduplicated include set, forward
 ## declarations, and fixed helper types that precede the program declarations.
-function emit_preamble(
+public function emit_preamble(
     e: ref[Emitter],
     program: ir.Program,
     funcs: span[ir.Function],
@@ -594,7 +329,7 @@ function emit_preamble(
 
 ## Emit the runtime helper set (format, parallel, async memory, builtin, and
 ## foreign-cstr helpers) required by the program.
-function emit_runtime_helpers(e: ref[Emitter], program: ir.Program, funcs: span[ir.Function]) -> void:
+public function emit_runtime_helpers(e: ref[Emitter], program: ir.Program, funcs: span[ir.Function]) -> void:
     if uses_format_helpers(program):
         emit_format_string_helpers(e)
     if task_emitter.uses_parallel_runtime(program):
@@ -650,7 +385,7 @@ public function emit_indented(e: ref[Emitter], indent: str, text: str) -> void:
 ## Free the per-generation lookup tables and the module-level backing-name maps.
 ## Their keys and values borrow IR and analysis text (the `str` entries are views,
 ## not owners), so only the table storage itself is freed here.
-function release_emitter_tables(e: ref[Emitter]) -> void:
+public function release_emitter_tables(e: ref[Emitter]) -> void:
     e.str_lit_map.release()
     e.used_labels.release()
     e.variant_eq_set.release()
@@ -693,7 +428,7 @@ function release_emitter_tables(e: ref[Emitter]) -> void:
 
 ## Free an option-struct list: each entry owns the `field_store` vector its
 ## `StructDecl.field` span points into.
-function release_opt_struct_entries(entries: ref[vec.Vec[OptionStructEntry]]) -> void:
+public function release_opt_struct_entries(entries: ref[vec.Vec[OptionStructEntry]]) -> void:
     var i: ptr_uint = 0
     while i < entries.len():
         let entry = entries.get(i) else:
@@ -770,7 +505,7 @@ function emit_string_type(e: ref[Emitter]) -> void:
 
 ## True when any emitted function calls `mt_str_slice`; also collects the span
 ## result types whose `mt_span_slice_<T>` helpers must be emitted.
-function collect_slice_helpers(
+public function collect_slice_helpers(
     funcs: span[ir.Function],
     has_str: ref[bool],
     has_str_index: ref[bool],
@@ -1114,7 +849,7 @@ function emit_fatal_str_helper(e: ref[Emitter]) -> void:
     emit_line(e, "}")
 
 
-function str_literal_name(index: ptr_uint) -> str:
+public function str_literal_name(index: ptr_uint) -> str:
     return strings.join_two("mt_str_lit_", ptr_uint_to_str(index))
 
 
@@ -1163,7 +898,7 @@ function c_string_literal(value: str) -> str:
 ## True when any struct, union, or variant declaration has a `str`-typed field,
 ## so the `mt_str` view type must be emitted even if no function signature or
 ## literal references `str` directly.
-function aggregates_use_str(program: ir.Program) -> bool:
+public function aggregates_use_str(program: ir.Program) -> bool:
     var i: ptr_uint = 0
     while i < program.structs.len:
         unsafe:
@@ -1192,7 +927,7 @@ function aggregates_use_str(program: ir.Program) -> bool:
 ## True when any generated (synthetic) generic variant has a `str`-typed arm
 ## field.  These variants are emitted by `collect_generic_variants` and are not
 ## present in the program's static variant declarations.
-function gen_variants_have_str(variants: ref[vec.Vec[ir.VariantDecl]]) -> bool:
+public function gen_variants_have_str(variants: ref[vec.Vec[ir.VariantDecl]]) -> bool:
     var i: ptr_uint = 0
     while i < variants.len():
         let v_ptr = variants.get(i) else:
@@ -1225,7 +960,7 @@ function fields_have_str(fields: span[ir.Field]) -> bool:
 ## program so the backend can emit their payload structs, kind enums, data unions,
 ## and outer tagged structs.  Prelude types (Option/Result) are synthetic and not
 ## present as AST decls, so this is the only way they reach the backend.
-function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl]:
+public function collect_generic_variants(program: ir.Program) -> vec.Vec[ir.VariantDecl]:
     var seen = map_mod.Map[str, bool].create()
     var result = vec.Vec[ir.VariantDecl].create()
     # Seed seen with variants already in program.variants (from lowering).
@@ -1529,7 +1264,7 @@ function prelude_variant_arm_info(name: str, args: span[types.Type]) -> GenericV
     return GenericVariantInfo(arms = arms.as_span())
 
 
-function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
+public function uses_string_view(functions: span[ir.Function], has_str_literals: bool) -> bool:
     if has_str_literals:
         return true
     if uses_str_equality(functions):
@@ -1549,7 +1284,7 @@ function uses_string_view(functions: span[ir.Function], has_str_literals: bool) 
     return false
 
 
-function uses_str_equality(functions: span[ir.Function]) -> bool:
+public function uses_str_equality(functions: span[ir.Function]) -> bool:
     var i: ptr_uint = 0
     while i < functions.len:
         unsafe:
@@ -1562,7 +1297,7 @@ function uses_str_equality(functions: span[ir.Function]) -> bool:
 ## True when any emitted function calls `mt_fatal` (so the helper, `<stdlib.h>`,
 ## and the string-view type must be emitted).  Also true when str_buffer
 ## runtime helpers are needed (they reference mt_fatal).
-function uses_fatal_helper(functions: span[ir.Function], program: ir.Program) -> bool:
+public function uses_fatal_helper(functions: span[ir.Function], program: ir.Program) -> bool:
     if has_str_buffer_structs(program):
         return true
     var i: ptr_uint = 0
@@ -1576,7 +1311,7 @@ function uses_fatal_helper(functions: span[ir.Function], program: ir.Program) ->
 
 ## True when any emitted function calls `mt_fatal_str` (the `str`-argument fatal
 ## helper), so the helper, `<stdlib.h>`, and the string-view type are emitted.
-function uses_fatal_str_helper(functions: span[ir.Function]) -> bool:
+public function uses_fatal_str_helper(functions: span[ir.Function]) -> bool:
     var i: ptr_uint = 0
     while i < functions.len:
         unsafe:
@@ -1699,7 +1434,7 @@ function expr_calls(ep: ptr[ir.Expr], name: str) -> bool:
 ## Every unique non-cstr string-literal value in the program, sorted by byte
 ## length then byte value (matching Ruby's `sort_by { [bytesize, k] }`), so the
 ## assigned `mt_str_lit_N` indices are deterministic.
-function collect_str_literals(functions: span[ir.Function]) -> vec.Vec[str]:
+public function collect_str_literals(functions: span[ir.Function]) -> vec.Vec[str]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[str].create()
     var i: ptr_uint = 0
@@ -2142,7 +1877,7 @@ function primitive_byte_size(name: str) -> long:
 
 ## Distinct SIMD types used across the emitted functions and aggregate
 ## declarations, deduplicated by C typedef name.
-function collect_simd_types(functions: span[ir.Function], program: ir.Program) -> vec.Vec[types.Type]:
+public function collect_simd_types(functions: span[ir.Function], program: ir.Program) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -2279,7 +2014,7 @@ function emit_simd_typedefs(e: ref[Emitter], simd_types: vec.Vec[types.Type]) ->
 
 ## Distinct span types used across the emitted functions (params, returns, and
 ## local declarations), deduplicated by span type name.
-function collect_variant_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
+public function collect_variant_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
     var seen = map_mod.Map[str, bool].create()
     var ci: ptr_uint = 0
     while ci < collected.len():
@@ -2303,7 +2038,7 @@ function collect_variant_span_types(program: ir.Program, collected: ref[vec.Vec[
         i += 1
 
 
-function collect_struct_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
+public function collect_struct_span_types(program: ir.Program, collected: ref[vec.Vec[types.Type]]) -> void:
     var seen = map_mod.Map[str, bool].create()
     # Seed seen with already-collected types.
     var ci: ptr_uint = 0
@@ -2324,7 +2059,7 @@ function collect_struct_span_types(program: ir.Program, collected: ref[vec.Vec[t
         i += 1
 
 
-function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+public function collect_span_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -2551,7 +2286,7 @@ function is_tuple_type(t: types.Type) -> bool:
 
 
 ## Distinct tuple types across the emitted functions (params, returns, locals).
-function collect_tuple_types(
+public function collect_tuple_types(
     functions: span[ir.Function],
     program: ir.Program,
     gen_variants: ref[vec.Vec[ir.VariantDecl]]
@@ -2605,7 +2340,7 @@ function collect_tuple_types(
 ## Drop tuples whose value struct the lowering already registered as a
 ## `Program.structs` declaration, so it is emitted once (from the IR, like the
 ## host) instead of through the backend's own collection.
-function filter_declared_tuple_types(tuple_types: vec.Vec[types.Type], program: ir.Program) -> vec.Vec[types.Type]:
+public function filter_declared_tuple_types(tuple_types: vec.Vec[types.Type], program: ir.Program) -> vec.Vec[types.Type]:
     var declared = map_mod.Map[str, bool].create()
     var i: ptr_uint = 0
     while i < program.structs.len:
@@ -4676,7 +4411,7 @@ public function nullable_span_index_helper_name(receiver_type: types.Type) -> st
 
 ## Distinct array-index receiver types used across the emitted functions
 ## (deduplicated by helper name), one per generated bounds-checked accessor.
-function collect_checked_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+public function collect_checked_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -4932,7 +4667,7 @@ public function emit_checked_index_helper(e: ref[Emitter], receiver_type: types.
 
 
 ## Distinct span-index receiver types across the emitted functions.
-function collect_checked_span_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
+public function collect_checked_span_index_types(functions: span[ir.Function]) -> vec.Vec[types.Type]:
     var seen = map_mod.Map[str, bool].create()
     var collected = vec.Vec[types.Type].create()
     var i: ptr_uint = 0
@@ -5615,7 +5350,7 @@ function variant_equality_helper_name(variant_c_name: str) -> str:
 ## that participates in an `==` / `!=` comparison.  This populates
 ## `e.variant_eq_set` before function emission so helper generation can run
 ## first.
-function scan_variant_equality(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
+public function scan_variant_equality(e: ref[Emitter], funcs: span[ir.Function], program: ir.Program) -> void:
     # Register each aggregate type found in equality comparisons.
     var fi: ptr_uint = 0
     while fi < funcs.len:
@@ -5928,7 +5663,7 @@ function find_struct_decl_by_c_name(program: ir.Program, cname: str) -> Option[i
 ## True when any registered aggregate equality helper compares a `str` field
 ## (directly, in an array element, or through a value nullable), so the
 ## `mt_str_equal` helper must be emitted.
-function equality_helpers_need_str(e: ref[Emitter], program: ir.Program) -> bool:
+public function equality_helpers_need_str(e: ref[Emitter], program: ir.Program) -> bool:
     var keys = e.variant_eq_set.keys()
     while true:
         let kp = keys.next() else:
@@ -6620,7 +6355,7 @@ public function emit_str_buffer_helpers(e: ref[Emitter]) -> void:
 #  Format string runtime helpers
 # =============================================================================
 
-function uses_format_helpers(program: ir.Program) -> bool:
+public function uses_format_helpers(program: ir.Program) -> bool:
     # The dynamic format builder and the explicit sinks share one helper block;
     # a sink can call an append/len helper directly without ever calling
     # `mt_format_append_bytes` or `mt_format_str_make` (a text-only str_buffer
@@ -6890,7 +6625,7 @@ function bare_opaque_name(base: types.Type) -> str:
             return ""
 
 
-function extract_bare_name(qname: str) -> str:
+public function extract_bare_name(qname: str) -> str:
     var idx = qname.len
     while idx > 0:
         idx -= 1
@@ -6952,7 +6687,7 @@ function collect_opt_type(
             pass
 
 
-function collect_opt_struct_decls(
+public function collect_opt_struct_decls(
     program: ir.Program,
     opaques: ref[map_mod.Map[str, bool]]
 ) -> vec.Vec[OptionStructEntry]:
@@ -7207,7 +6942,7 @@ public function emit_type_aliases(e: ref[Emitter], program: ir.Program) -> void:
 ## The C backing name of every declared opaque, keyed by the type's qualified C
 ## key (`std_sdl3_Window` -> `SDL_Window`), so `c_type` renders opaque values as
 ## the backing type (host `opaque_c_type_name`).
-function collect_opaque_backings(program: ir.Program) -> map_mod.Map[str, str]:
+public function collect_opaque_backings(program: ir.Program) -> map_mod.Map[str, str]:
     var m = map_mod.Map[str, str].create()
     var i: ptr_uint = 0
     while i < program.opaques.len:
@@ -7223,7 +6958,7 @@ function collect_opaque_backings(program: ir.Program) -> map_mod.Map[str, str]:
     return m
 
 
-function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
+public function collect_std_c_backing(program: ir.Program) -> map_mod.Map[str, str]:
     var m = map_mod.Map[str, str].create()
     var ai: ptr_uint = 0
     while ai < program.type_aliases.len:
@@ -7458,7 +7193,7 @@ function emit_builtin_helpers(e: ref[Emitter]) -> void:
 
 
 ## True when the entry point uses the argv → span[str] bridge.
-function uses_entry_argv(program: ir.Program) -> bool:
+public function uses_entry_argv(program: ir.Program) -> bool:
     var i: ptr_uint = 0
     while i < program.functions.len:
         unsafe:
@@ -7496,7 +7231,7 @@ public function emit_entry_argv_helpers(e: ref[Emitter]) -> void:
 
 
 ## True when any emitted function calls the foreign str-to-cstr temp helper.
-function uses_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
+public function uses_foreign_cstr_helper(functions: span[ir.Function]) -> bool:
     var i: ptr_uint = 0
     while i < functions.len:
         unsafe:
