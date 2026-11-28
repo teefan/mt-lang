@@ -9,6 +9,7 @@ import mtc.semantic.types as types
 import mtc.strings
 import mtc.c_backend.reachability as reachability
 import mtc.c_backend.c_backend as c_backend
+import mtc.c_backend.slice as slice_emitter
 import mtc.c_backend.task as task_emitter
 
 
@@ -293,7 +294,7 @@ function emit_program_bodies(
         c_backend.emit_variant_equality_helpers(e)
         c_backend.emit_struct_equality_helpers(e, program)
     if slice_has_str or slice_has_str_index or slice_has_str_concat or slice_span_types.len() > 0:
-        c_backend.emit_slice_helpers(e, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
+        slice_emitter.emit_slice_helpers(e, slice_has_str, slice_has_str_index, slice_has_str_concat, slice_span_types)
     if program.constants.len > 0:
         var emitted_consts = reachability.emitted_constants(program, funcs)
         var ci: ptr_uint = 0

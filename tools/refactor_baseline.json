@@ -185,6 +185,7 @@
     "c_backend.format_string": "format_string",
     "c_backend.program": "program_emitter",
     "c_backend.reachability": "reachability",
+    "c_backend.slice": "slice_emitter",
     "c_backend.statement": "statement",
     "c_backend.task": "task_emitter",
     "c_naming": "naming",
@@ -379,7 +380,7 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1220,
+    "windows": 1217,
     "duplicated_lines": 8349,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
@@ -1286,7 +1287,6 @@
       "bd89bfddcf7c1ebd29299a0660af3934b5f8f59c",
       "bd8dd3d03bd8bb20c4cd69b6c69d5e8b49ba7ad3",
       "bda81def84ca13a4672d9db6d311e5daf5fb309b",
-      "bdb6db2a0fa19445349ac109826705832ca5356f",
       "bdf28f05a29c07edbee4c2526d15f514ae7f8749",
       "be6203eaa44a725513c8c60361e902d2e0966d71",
       "be759bbb6f8ae1d96b600d6d71b96a3d36a49601",
@@ -1460,7 +1460,6 @@
       "e3d67685b6c70402a8a161306cf2fa243b250b40",
       "e42432de61ef678965b8baad236c4f0a8c0a4355",
       "e42abcca48a0812f142cdf52b7e594e7c8a8515c",
-      "e44d16cb8e6619557de706b5f6671e86d8829926",
       "e450106026f2bd102e767f746506af573e83609f",
       "e51a702945e70c409f7afbb48ab4c239ec143baf",
       "e51f5e2f80ac680e27158c60937806fe49836b91",
@@ -1524,7 +1523,6 @@
       "f0156955eb93369b53755d6f7feb319da5041ae6",
       "f01d81e357b953044df52c4f7b61fa4b612a6281",
       "f0671437e25319c62b886117779ef3d6ad02dc3f",
-      "f08b13a57410bdfcf3c9e1c3947ff602acd1969a",
       "f09fccd1fc145ecdb0c1ee221482f40ed06c7c90",
       "f0d0b0b150d496439f2dde5101ba29237b20ce23",
       "f0d2a4c5c23d106cea7c6f6cd7a65d598251434f",
@@ -1605,7 +1603,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148769,
+    "total_code": 148779,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1664,14 +1662,14 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 6765,
-        "code": 5552,
+        "lines": 6480,
+        "code": 5283,
         "max_line": 214,
-        "max_function": 125
+        "max_function": 122
       },
       "projects/mtc/src/mtc/c_backend/driver.mt": {
-        "lines": 285,
-        "code": 243,
+        "lines": 286,
+        "code": 244,
         "max_line": 257,
         "max_function": 270
       },
@@ -1688,8 +1686,8 @@
         "max_function": 144
       },
       "projects/mtc/src/mtc/c_backend/program.mt": {
-        "lines": 379,
-        "code": 337,
+        "lines": 380,
+        "code": 338,
         "max_line": 132,
         "max_function": 200
       },
@@ -1698,6 +1696,12 @@
         "code": 389,
         "max_line": 119,
         "max_function": 76
+      },
+      "projects/mtc/src/mtc/c_backend/slice.mt": {
+        "lines": 296,
+        "code": 277,
+        "max_line": 155,
+        "max_function": 125
       },
       "projects/mtc/src/mtc/c_backend/statement.mt": {
         "lines": 331,

@@ -11,6 +11,7 @@ import mtc.semantic.types as types
 import mtc.c_backend.reachability as reachability
 import mtc.c_backend.program as program_emitter
 import mtc.c_backend.c_backend as c_backend
+import mtc.c_backend.slice as slice_emitter
 
 
 public function generate_c_impl(
@@ -146,7 +147,7 @@ public function generate_c_impl(
     var slice_has_str_index = false
     var slice_has_str_concat = false
     var slice_span_types = vec.Vec[types.Type].create()
-    c_backend.collect_slice_helpers(
+    slice_emitter.collect_slice_helpers(
         funcs,
         ref_of(slice_has_str),
         ref_of(slice_has_str_index),
