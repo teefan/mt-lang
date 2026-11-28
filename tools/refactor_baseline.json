@@ -379,8 +379,8 @@
   },
   "duplication": {
     "window": 12,
-    "windows": 1219,
-    "duplicated_lines": 8325,
+    "windows": 1220,
+    "duplicated_lines": 8349,
     "fingerprints": [
       "002fb4df97ff948a6090fcfb44207ade01b6bf50",
       "006f5e73a29259e9584d62badf531ddb0bacc8bf",
@@ -892,6 +892,7 @@
       "6da7d2f123a73c7afad77d50c113f290a0a2fdef",
       "6dd957f4d2753d9920909734e3abb83ca7997910",
       "6e25943bb0226ded0df8602313a940bb7c29bad3",
+      "6e341edd3cf5b3d24b17e9be51670ca7cc80472d",
       "6e3f40ae3cedffde4c4930c4a68412a6aedfa5b8",
       "6e3f7465e3dd8b2bd5c6a988cacde8b2efc2d51c",
       "6e4edf46e18df9a4a8ea339c45aa6648b6a2883a",
@@ -2647,8 +2648,8 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 11111,
-        "code": 8567,
+        "lines": 11019,
+        "code": 8497,
         "max_line": 184,
         "max_function": 127
       },
@@ -2695,8 +2696,8 @@
         "max_function": 59
       },
       "projects/mtc/src/mtc/semantic/member_calls.mt": {
-        "lines": 684,
-        "code": 550,
+        "lines": 775,
+        "code": 620,
         "max_line": 135,
         "max_function": 146
       },

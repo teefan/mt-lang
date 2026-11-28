@@ -5970,7 +5970,7 @@ function infer_expr_inner(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[a
                 check_cast_call(ctx, c.expression, source, target, c.line, c.column)
                 return target
             ast.Expr.expr_member_access as ma:
-                return resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
+                return member_calls.resolve_member_access(ctx, scope, ma.receiver, ma.member_name, false, ma.line, ma.column)
             ast.Expr.expr_index_access as ix:
                 return infer_index_access_type(ctx, scope, ix.receiver, ix.index)
             ast.Expr.expr_unsafe as u:
@@ -7813,7 +7813,7 @@ function collect_type_methods(
 ## The host does not check a *generic* body — it is checked at instantiation —
 ## so an unsafe-context requirement inside one is neither reported nor recorded
 ## (this is why `redundant-unsafe` skips generic bodies).
-function in_generic_body(ctx: ref[Context]) -> bool:
+public function in_generic_body(ctx: ref[Context]) -> bool:
     return ctx.type_params.len() > 0
 
 
@@ -7821,7 +7821,7 @@ function in_generic_body(ctx: ref[Context]) -> bool:
 ## reached while inside an `unsafe:` context, marks the *enclosing* unsafe node's
 ## line so the linter's `redundant-unsafe` rule can tell a required `unsafe:`
 ## from one with nothing to do.
-function mark_required_unsafe(ctx: ref[Context]) -> void:
+public function mark_required_unsafe(ctx: ref[Context]) -> void:
     let top = ctx.unsafe_statement_lines.last() else:
         return
     ctx.required_unsafe_lines.set(unsafe: read(top), true)
@@ -9020,7 +9020,7 @@ function report_module_member(
 
 ## Resolve `alias.member` where `alias` is an imported module and `member` is one
 ## of its exported values, yielding the value's type.  None for anything else.
-function try_imported_member(
+public function try_imported_member(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr],
@@ -9577,7 +9577,7 @@ function interface_method_named(methods: span[ast.InterfaceMethod], name: str) -
 ## A re-exported type alias follows its resolved target, exactly as
 ## `resolve_imported_type` does for a type reference (`rl.Rectangle` names the
 ## raw binding's struct, not the alias).
-function try_imported_type(
+public function try_imported_type(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr],
@@ -9880,7 +9880,7 @@ public function imported_method_call_type(
 ## `Vec[int]`), with the receiver's type arguments substituted.  None when no
 ## visible binding declares the method, so callers keep their permissive
 ## fallback.
-function imported_method_return_type(ctx: ref[Context], recv: types.Type, member: str) -> Option[types.Type]:
+public function imported_method_return_type(ctx: ref[Context], recv: types.Type, member: str) -> Option[types.Type]:
     # A receiver whose type arrives as a bare name (`Bitset`, re-exported by an
     # imported signature) resolves its methods through the visible bindings.
     match recv:
@@ -9916,98 +9916,6 @@ function imported_method_return_type(ctx: ref[Context], recv: types.Type, member
             return Option[types.Type].some(value = substitute_type(sig.return_type, ref_of(subs)))
         _:
             return Option[types.Type].none
-
-
-## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
-## is a static member access (validate against members/arms/methods); anything
-## else is an instance access (struct field/method or permissive).
-function resolve_member_access(
-    ctx: ref[Context],
-    scope: ref[sscope.Scope],
-    receiver: ptr[ast.Expr],
-    member: str,
-    is_method_call: bool,
-    line: ptr_uint,
-    column: ptr_uint
-) -> types.Type:
-    if member.len == 0:
-        # An incomplete dot access (`read(p).`): the parser recovered with an
-        # empty member name.  Record the receiver's type at the dot for the
-        # LSP completion fallback and suppress the member check.
-        let recv_ty = infer_expr(ctx, scope, receiver)
-        if ctx.tooling_facts and not receiver_is_text_chain(receiver):
-            ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
-        return types.Type.ty_error
-    # An instantiated imported receiver resolves the member against the binding
-    # with the type arguments substituted.
-    match specialization_imported_receiver(ctx, scope, receiver):
-        Option.some as instantiated:
-            match imported_method_return_type(ctx, instantiated.value, member):
-                Option.some as method_type:
-                    return method_type.value
-                Option.none:
-                    pass
-        Option.none:
-            pass
-    # A specialization of a locally-known variant/enum/flags type reads one of
-    # the type's own members (`Option[float].none`); the value is the instance
-    # itself.  A struct's member read falls through to the normal paths.
-    match type_instance_receiver(ctx, scope, receiver):
-        Option.some as instance:
-            match instance.value:
-                types.Type.ty_imported as im:
-                    let im_bp = unsafe: read(im.payload)
-                    if ctx.static_member_types.contains(im_bp.name):
-                        check_static_member(ctx, im_bp.name, member, line, column)
-                        return instance.value
-                _:
-                    pass
-        Option.none:
-            pass
-    match try_imported_member(ctx, scope, receiver, member):
-        Option.some as imported_value:
-            return imported_value.value
-        Option.none:
-            match member_calls.imported_static_member(ctx, scope, receiver, member, line, column):
-                Option.some as imported_static:
-                    return imported_static.value
-                Option.none:
-                    match member_calls.static_type_receiver(ctx, scope, receiver):
-                        Option.some as tn:
-                            check_static_member(ctx, tn.value, member, line, column)
-                            return types.named_type(
-                                name = tn.value,
-                                module_name = ctx.module_name,
-                                linkage_name = Option[str].none
-                            )
-                        Option.none:
-                            match try_imported_type(ctx, scope, receiver, member):
-                                Option.some as imported_type:
-                                    return imported_type.value
-                                Option.none:
-                                    let raw_recv = infer_expr(ctx, scope, receiver)
-                                    # Keep the LSP's fallback fact: a receiver that
-                                    # is not a plain name/field chain (`read(p)`,
-                                    # `make()`, `a[0]`) cannot be resolved from the
-                                    # source text, so record its inferred type at the
-                                    # member's position.
-                                    if ctx.tooling_facts and not receiver_is_text_chain(receiver):
-                                        ctx.member_receiver_types.set(binding_key(line, column), raw_recv)
-                                    # A field read through a raw pointer dereferences
-                                    # it — the host requires unsafe
-                                    # (`raw pointer dereference requires unsafe`).
-                                    # `own`/`ref` receivers auto-deref without.
-                                    if (
-                                        types.is_raw_pointer(raw_recv)
-                                        and not is_method_call
-                                        and not in_generic_body(ctx)
-                                    ):
-                                        if ctx.unsafe_depth == 0:
-                                            report(ctx, line, column, "raw pointer dereference requires unsafe")
-                                        else:
-                                            mark_required_unsafe(ctx)
-                                    let recv = project_pointer_receiver(raw_recv)
-                                    return member_calls.check_member(ctx, recv, member, is_method_call, line, column)
 
 
 ## True when a member access's receiver expression is a plain identifier or a

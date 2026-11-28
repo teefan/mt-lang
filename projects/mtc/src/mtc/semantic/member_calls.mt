@@ -682,3 +682,94 @@ public function is_imported_constant_member(ctx: ref[analyzer.Context], ep: ptr[
                         return false
             _:
                 return false
+
+## Dispatch a member access: a bare type-name receiver of an enum/flags/variant
+## is a static member access (validate against members/arms/methods); anything
+## else is an instance access (struct field/method or permissive).
+public function resolve_member_access(
+    ctx: ref[analyzer.Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
+    if member.len == 0:
+        # An incomplete dot access (`read(p).`): the parser recovered with an
+        # empty member name.  Record the receiver's type at the dot for the
+        # LSP completion fallback and suppress the member check.
+        let recv_ty = analyzer.infer_expr(ctx, scope, receiver)
+        if ctx.tooling_facts and not analyzer.receiver_is_text_chain(receiver):
+            ctx.member_receiver_types.set(analyzer.binding_key(line, column), recv_ty)
+        return types.Type.ty_error
+    # An instantiated imported receiver resolves the member against the binding
+    # with the type arguments substituted.
+    match analyzer.specialization_imported_receiver(ctx, scope, receiver):
+        Option.some as instantiated:
+            match analyzer.imported_method_return_type(ctx, instantiated.value, member):
+                Option.some as method_type:
+                    return method_type.value
+                Option.none:
+                    pass
+        Option.none:
+            pass
+    # A specialization of a locally-known variant/enum/flags type reads one of
+    # the type's own members (`Option[float].none`); the value is the instance
+    # itself.  A struct's member read falls through to the normal paths.
+    match analyzer.type_instance_receiver(ctx, scope, receiver):
+        Option.some as instance:
+            match instance.value:
+                types.Type.ty_imported as im:
+                    let im_bp = unsafe: read(im.payload)
+                    if ctx.static_member_types.contains(im_bp.name):
+                        analyzer.check_static_member(ctx, im_bp.name, member, line, column)
+                        return instance.value
+                _:
+                    pass
+        Option.none:
+            pass
+    match analyzer.try_imported_member(ctx, scope, receiver, member):
+        Option.some as imported_value:
+            return imported_value.value
+        Option.none:
+            match imported_static_member(ctx, scope, receiver, member, line, column):
+                Option.some as imported_static:
+                    return imported_static.value
+                Option.none:
+                    match static_type_receiver(ctx, scope, receiver):
+                        Option.some as tn:
+                            analyzer.check_static_member(ctx, tn.value, member, line, column)
+                            return types.named_type(
+                                name = tn.value,
+                                module_name = ctx.module_name,
+                                linkage_name = Option[str].none
+                            )
+                        Option.none:
+                            match analyzer.try_imported_type(ctx, scope, receiver, member):
+                                Option.some as imported_type:
+                                    return imported_type.value
+                                Option.none:
+                                    let raw_recv = analyzer.infer_expr(ctx, scope, receiver)
+                                    # Keep the LSP's fallback fact: a receiver that
+                                    # is not a plain name/field chain (`read(p)`,
+                                    # `make()`, `a[0]`) cannot be resolved from the
+                                    # source text, so record its inferred type at the
+                                    # member's position.
+                                    if ctx.tooling_facts and not analyzer.receiver_is_text_chain(receiver):
+                                        ctx.member_receiver_types.set(analyzer.binding_key(line, column), raw_recv)
+                                    # A field read through a raw pointer dereferences
+                                    # it — the host requires unsafe
+                                    # (`raw pointer dereference requires unsafe`).
+                                    # `own`/`ref` receivers auto-deref without.
+                                    if (
+                                        types.is_raw_pointer(raw_recv)
+                                        and not is_method_call
+                                        and not analyzer.in_generic_body(ctx)
+                                    ):
+                                        if ctx.unsafe_depth == 0:
+                                            analyzer.report(ctx, line, column, "raw pointer dereference requires unsafe")
+                                        else:
+                                            analyzer.mark_required_unsafe(ctx)
+                                    let recv = analyzer.project_pointer_receiver(raw_recv)
+                                    return check_member(ctx, recv, member, is_method_call, line, column)
