@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-213-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-214-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 213, 2026-11-26)
+## Status at a glance (session 214, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -7418,6 +7418,21 @@ examples **311/311**.
 - `c_backend.mt` drops from 7,080 to 6,844 physical lines; expression.mt is
   449 lines.  Code lines rise by 1 (float-text import); duplication stays
   8,349 / 1,220.  Long-function and large-file counts are unchanged.
+- All C output and behavior oracles are unchanged.
+
+**Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap
+fixed point; `test/mt` **106/0**; strict **0**; conformance **26/26**; split
+full; watch **100 rebuilds**; CLI **231/231**; diagnostics/lint **0 differ**;
+examples **311/311**.
+
+### Session 214 — backend statement-control helpers
+
+- Moved `emit_stmts`, `emit_if`, `emit_switch`, and `emit_else` into
+  `c_backend/statement.mt` (331 lines total).  `emit_stmts` stays public for
+  the function emitter; the other three are internal to the statement module.
+- `c_backend.mt` drops from 6,844 to 6,765 physical lines.  Code and
+  duplication totals are unchanged (148,769 code lines; 8,349 duplicated
+  lines / 1,220 windows); long-function and large-file counts are unchanged.
 - All C output and behavior oracles are unchanged.
 
 **Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap

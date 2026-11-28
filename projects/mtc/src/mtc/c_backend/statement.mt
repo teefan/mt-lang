@@ -211,17 +211,17 @@ public function emit_statement(e: ref[c_backend.Emitter], sp: ptr[ir.Stmt], leve
             ir.Stmt.stmt_block as blk:
                 if c_backend.block_requires_scope(blk.body):
                     c_backend.emit_indented(e, indent, "{")
-                    c_backend.emit_stmts(e, blk.body, level + 1)
+                    emit_stmts(e, blk.body, level + 1)
                     c_backend.emit_indented(e, indent, "}")
                 else:
-                    c_backend.emit_stmts(e, blk.body, level)
+                    emit_stmts(e, blk.body, level)
             ir.Stmt.stmt_if as iff:
-                c_backend.emit_if(e, iff.condition, iff.then_body, c_backend.else_stmts_or_empty(iff.else_body), level)
+                emit_if(e, iff.condition, iff.then_body, c_backend.else_stmts_or_empty(iff.else_body), level)
             ir.Stmt.stmt_while as w:
                 c_backend.emit_line(e, strings.join_four(indent, "while (", c_backend.render_expr(e, w.condition), ") {"))
                 if e.debug_guards:
                     c_backend.emit_loop_guard(e, c_backend.loop_guard_name(e, sp), level + 1)
-                c_backend.emit_stmts(e, w.body, level + 1)
+                emit_stmts(e, w.body, level + 1)
                 c_backend.emit_indented(e, indent, "}")
             ir.Stmt.stmt_for as f:
                 var header = string.String.create()
@@ -236,10 +236,10 @@ public function emit_statement(e: ref[c_backend.Emitter], sp: ptr[ir.Stmt], leve
                 c_backend.emit_line(e, header.as_str())
                 if e.debug_guards:
                     c_backend.emit_loop_guard(e, c_backend.loop_guard_name(e, sp), level + 1)
-                c_backend.emit_stmts(e, f.body, level + 1)
+                emit_stmts(e, f.body, level + 1)
                 c_backend.emit_indented(e, indent, "}")
             ir.Stmt.stmt_switch as sw:
-                c_backend.emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
+                emit_switch(e, sw.expression, sw.cases, sw.exhaustive, level)
             ir.Stmt.stmt_goto as g:
                 c_backend.emit_line(e, strings.join_four(indent, "goto ", g.label, ";"))
             ir.Stmt.stmt_label as lbl:
@@ -251,3 +251,81 @@ public function emit_statement(e: ref[c_backend.Emitter], sp: ptr[ir.Stmt], leve
                 c_backend.emit_indented(e, indent, "continue;")
             _:
                 fatal(c"c_backend: unsupported statement")
+
+public function emit_stmts(e: ref[c_backend.Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
+    var i: ptr_uint = 0
+    while i < body.len:
+        unsafe:
+            emit_statement(e, body.data + i, level)
+        i += 1
+
+
+## Emit an `if` and its else chain, re-flattening a single-`if` else body back
+## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
+function emit_if(
+    e: ref[c_backend.Emitter],
+    condition: ptr[ir.Expr],
+    then_body: span[ir.Stmt],
+    else_body: span[ir.Stmt],
+    level: ptr_uint
+) -> void:
+    let indent = c_backend.indent_c(level)
+    c_backend.emit_line(e, strings.join_four(indent, "if (", c_backend.render_expr(e, condition), ") {"))
+    emit_stmts(e, then_body, level + 1)
+    emit_else(e, else_body, level)
+
+
+## Emit a `switch`.  Non-default cases are `case VALUE: { body [break;] }`; a `_`
+## arm is `default: { body [break;] }`; and an exhaustive switch with no explicit
+## default gets `default: __builtin_unreachable();`.  Mirrors the switch path in
+## c_backend/statements.rb.
+function emit_switch(
+    e: ref[c_backend.Emitter],
+    expression: ptr[ir.Expr],
+    cases: span[ir.SwitchCase],
+    exhaustive: bool,
+    level: ptr_uint
+) -> void:
+    let indent = c_backend.indent_c(level)
+    let case_indent = c_backend.indent_c(level + 1)
+    c_backend.emit_line(e, strings.join_four(indent, "switch (", c_backend.render_expr(e, expression), ") {"))
+    var has_default = false
+    var i: ptr_uint = 0
+    while i < cases.len:
+        unsafe:
+            let sc = read(cases.data + i)
+            if sc.is_default:
+                has_default = true
+                c_backend.emit_indented(e, case_indent, "default: {")
+            else:
+                let value = sc.value else:
+                    fatal(c"c_backend: non-default switch case missing value")
+                c_backend.emit_line(e, strings.join_four(case_indent, "case ", c_backend.render_expr(e, value), ": {"))
+            emit_stmts(e, sc.body, level + 2)
+            if not c_backend.body_terminates(sc.body):
+                c_backend.emit_line(e, strings.join_two(c_backend.indent_c(level + 2), "break;"))
+            c_backend.emit_indented(e, case_indent, "}")
+        i += 1
+    if exhaustive and not has_default:
+        c_backend.emit_indented(e, case_indent, "default: __builtin_unreachable();")
+    c_backend.emit_indented(e, indent, "}")
+
+
+function emit_else(e: ref[c_backend.Emitter], else_body: span[ir.Stmt], level: ptr_uint) -> void:
+    let indent = c_backend.indent_c(level)
+    if else_body.len == 1:
+        unsafe:
+            match read(else_body.data + 0):
+                ir.Stmt.stmt_if as nested:
+                    c_backend.emit_line(e, strings.join_four(indent, "} else if (", c_backend.render_expr(e, nested.condition), ") {"))
+                    emit_stmts(e, nested.then_body, level + 1)
+                    emit_else(e, c_backend.else_stmts_or_empty(nested.else_body), level)
+                    return
+                _:
+                    pass
+    if else_body.len > 0:
+        c_backend.emit_indented(e, indent, "} else {")
+        emit_stmts(e, else_body, level + 1)
+        c_backend.emit_indented(e, indent, "}")
+    else:
+        c_backend.emit_indented(e, indent, "}")

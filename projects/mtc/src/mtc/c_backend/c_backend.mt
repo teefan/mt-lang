@@ -3655,7 +3655,7 @@ public function emit_function(e: ref[Emitter], func: ir.Function, export_public:
         let first_guard_id = e.loop_guard_id + 1
         collect_loop_guards(e, func.body)
         emit_loop_guard_declarations(e, first_guard_id)
-    emit_stmts(e, func.body, 1)
+    statement.emit_stmts(e, func.body, 1)
     emit_line(e, "}")
     e.current_fn_return_type = types.primitive("void")
     e.current_fn_linkage = ""
@@ -3758,14 +3758,6 @@ function collect_used_labels(body: span[ir.Stmt], labels: ref[map_mod.Map[str, b
 # =============================================================================
 #  Statement emission (mirrors c_backend/statements.rb)
 # =============================================================================
-
-public function emit_stmts(e: ref[Emitter], body: span[ir.Stmt], level: ptr_uint) -> void:
-    var i: ptr_uint = 0
-    while i < body.len:
-        unsafe:
-            statement.emit_statement(e, body.data + i, level)
-        i += 1
-
 
 ## Emit a `#line <n> "<path>"` directive for a line-carrying statement (debug
 ## builds only).  Mirrors Ruby's per-statement line directive.
@@ -3898,42 +3890,6 @@ function hoist_array_call_to_temp(e: ref[Emitter], ep: ptr[ir.Expr], level: ptr_
     e.array_call_temps.set(key, temp)
 
 
-## Emit a `switch`.  Non-default cases are `case VALUE: { body [break;] }`; a `_`
-## arm is `default: { body [break;] }`; and an exhaustive switch with no explicit
-## default gets `default: __builtin_unreachable();`.  Mirrors the switch path in
-## c_backend/statements.rb.
-public function emit_switch(
-    e: ref[Emitter],
-    expression: ptr[ir.Expr],
-    cases: span[ir.SwitchCase],
-    exhaustive: bool,
-    level: ptr_uint
-) -> void:
-    let indent = indent_c(level)
-    let case_indent = indent_c(level + 1)
-    emit_line(e, strings.join_four(indent, "switch (", render_expr(e, expression), ") {"))
-    var has_default = false
-    var i: ptr_uint = 0
-    while i < cases.len:
-        unsafe:
-            let sc = read(cases.data + i)
-            if sc.is_default:
-                has_default = true
-                emit_indented(e, case_indent, "default: {")
-            else:
-                let value = sc.value else:
-                    fatal(c"c_backend: non-default switch case missing value")
-                emit_line(e, strings.join_four(case_indent, "case ", render_expr(e, value), ": {"))
-            emit_stmts(e, sc.body, level + 2)
-            if not body_terminates(sc.body):
-                emit_line(e, strings.join_two(indent_c(level + 2), "break;"))
-            emit_indented(e, case_indent, "}")
-        i += 1
-    if exhaustive and not has_default:
-        emit_indented(e, case_indent, "default: __builtin_unreachable();")
-    emit_indented(e, indent, "}")
-
-
 ## True when a statement sequence always transfers control (mirrors
 ## control_flow_emission.rb body_terminates? / statement_terminates?).
 function body_terminates(body: span[ir.Stmt]) -> bool:
@@ -3987,41 +3943,6 @@ public function else_stmts_or_empty(else_body: Option[span[ir.Stmt]]) -> span[ir
         Option.none:
             pass
     return span[ir.Stmt]()
-
-
-## Emit an `if` and its else chain, re-flattening a single-`if` else body back
-## into `else if` (mirrors control_flow_emission.rb emit_if_statement).
-public function emit_if(
-    e: ref[Emitter],
-    condition: ptr[ir.Expr],
-    then_body: span[ir.Stmt],
-    else_body: span[ir.Stmt],
-    level: ptr_uint
-) -> void:
-    let indent = indent_c(level)
-    emit_line(e, strings.join_four(indent, "if (", render_expr(e, condition), ") {"))
-    emit_stmts(e, then_body, level + 1)
-    emit_else(e, else_body, level)
-
-
-function emit_else(e: ref[Emitter], else_body: span[ir.Stmt], level: ptr_uint) -> void:
-    let indent = indent_c(level)
-    if else_body.len == 1:
-        unsafe:
-            match read(else_body.data + 0):
-                ir.Stmt.stmt_if as nested:
-                    emit_line(e, strings.join_four(indent, "} else if (", render_expr(e, nested.condition), ") {"))
-                    emit_stmts(e, nested.then_body, level + 1)
-                    emit_else(e, else_stmts_or_empty(nested.else_body), level)
-                    return
-                _:
-                    pass
-    if else_body.len > 0:
-        emit_indented(e, indent, "} else {")
-        emit_stmts(e, else_body, level + 1)
-        emit_indented(e, indent, "}")
-    else:
-        emit_indented(e, indent, "}")
 
 
 ## Render a `for` init/post clause (no indent, no trailing `;`) — mirrors
