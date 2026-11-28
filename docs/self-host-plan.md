@@ -141,7 +141,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 191 files / 148,713 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **0 unused + 7 intentionally test-only** public declarations; 8,289 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
+| **Refactoring safety** | structural guard: 191 files / 148,734 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **0 unused + 7 intentionally test-only** public declarations; 8,325 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -7302,9 +7302,9 @@ examples **311/311**.
 - Moved `check_imported_member_depth` and `alias_binding_has_member` into
   `semantic/member_calls.mt` (455 lines total); their lookup helpers are
   public.  `semantic/analyzer.mt` drops from 11,487 to 11,342 physical lines.
-- Code lines fall from 148,734 to 148,713; duplicated lines fall 8,325 →
-  8,289 while window clusters stay 1,219.  Long-function and large-file
-  counts are unchanged.
+- Code lines stay 148,734 and duplicated lines stay 8,325 / 1,219 windows;
+  the extraction moves code between modules without changing either metric.
+  Long-function and large-file counts are unchanged.
 - Diagnostics and behavior oracles are unchanged.
 
 **Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap
