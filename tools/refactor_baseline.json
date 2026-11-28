@@ -1604,7 +1604,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148765,
+    "total_code": 148768,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -2203,8 +2203,8 @@
         "max_function": 53
       },
       "projects/mtc/src/mtc/lsp/completion.mt": {
-        "lines": 3897,
-        "code": 3213,
+        "lines": 3898,
+        "code": 3214,
         "max_line": 130,
         "max_function": 145
       },
@@ -2311,8 +2311,8 @@
         "max_function": 86
       },
       "projects/mtc/src/mtc/lsp/navigation.mt": {
-        "lines": 6066,
-        "code": 4761,
+        "lines": 6067,
+        "code": 4762,
         "max_line": 206,
         "max_function": 226
       },
@@ -2647,14 +2647,14 @@
         "max_function": 39
       },
       "projects/mtc/src/mtc/semantic/analyzer.mt": {
-        "lines": 11264,
-        "code": 8688,
+        "lines": 11111,
+        "code": 8567,
         "max_line": 184,
         "max_function": 127
       },
       "projects/mtc/src/mtc/semantic/call_arguments.mt": {
-        "lines": 372,
-        "code": 318,
+        "lines": 373,
+        "code": 319,
         "max_line": 126,
         "max_function": 136
       },
@@ -2695,8 +2695,8 @@
         "max_function": 59
       },
       "projects/mtc/src/mtc/semantic/member_calls.mt": {
-        "lines": 532,
-        "code": 429,
+        "lines": 684,
+        "code": 550,
         "max_line": 135,
         "max_function": 146
       },

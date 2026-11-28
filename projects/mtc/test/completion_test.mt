@@ -8,6 +8,7 @@ import std.string as string_mod
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.types as types
 import mtc.lsp.completion as comp
 
@@ -308,7 +309,7 @@ function test_incomplete_dot_records_non_text_receiver_type() -> void:
     var analysis = analyzer.check_source_file(ast_file)
     expect_eq(int<-parse_diags.len(), 2)
 
-    let make_fact = analyzer.member_receiver_type_at(ref_of(analysis), 9, 19)
+    let make_fact = member_calls.member_receiver_type_at(ref_of(analysis), 9, 19)
     match make_fact:
         Option.some as ty:
             match ty.value:
@@ -320,7 +321,7 @@ function test_incomplete_dot_records_non_text_receiver_type() -> void:
         Option.none:
             expect(false, "make(). receiver type not recorded")
 
-    let index_fact = analyzer.member_receiver_type_at(ref_of(analysis), 11, 19)
+    let index_fact = member_calls.member_receiver_type_at(ref_of(analysis), 11, 19)
     match index_fact:
         Option.some as ty:
             match ty.value:

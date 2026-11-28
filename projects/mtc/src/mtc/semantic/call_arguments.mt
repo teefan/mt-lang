@@ -7,6 +7,7 @@ import std.vec as vec
 
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.scope as sscope
 import mtc.semantic.types as types
 
@@ -203,7 +204,7 @@ public function call_argument_expected_types(
                         pass
                 # A static struct method (`Counter.make(...)`,
                 # `lib.Adder.make(...)`).
-                match analyzer.static_struct_receiver_type(ctx, scope, ma.receiver):
+                match member_calls.static_struct_receiver_type(ctx, scope, ma.receiver):
                     Option.some as rt:
                         return expected_from_method(ctx, rt.value, ma.member_name, args)
                     Option.none:

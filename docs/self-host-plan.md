@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-210-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-211-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 210, 2026-11-26)
+## Status at a glance (session 211, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -141,7 +141,7 @@ history.
 | Imported bindings | **29/29 verified** by the native `imported-bindings --all --check`; **Box2D is 3.2.0** (`178495ba…`, tag `v3.2.0`) and the raw module is reproducible (session 158; the host parity report is retired) |
 | Bindgen | the native `mtc bindgen` / `bindings` commands are the generator of record; `bindings/raw/<name>.json` holds the option tables, `bindings/nullable/<name>.json` the `?` policies, and `tools/rebind_binding.rb` reproduces a raw module; the host reproducibility harness is retired |
 | Compiler throughput | **`emit-c` 4.6 s** and full `build` 20.0 s with the release-profile compiler (session 155); the debug bootstrap compiler measures 11.5 s / 25.9 s (session 152; the session-72 row read 17.1 s / 32.7 s, and the archived host measured 54.3 s / 76.3 s); `bootstrap --fast` 2.6 min.  C output unchanged |
-| **Refactoring safety** | structural guard: 194 files / 148,765 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **0 unused + 7 intentionally test-only** public declarations; 8,325 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
+| **Refactoring safety** | structural guard: 194 files / 148,768 code lines; 119 edges / **0 layering violations**; **0 naming, 0 alias / vocabulary violations**; **0 unused + 7 intentionally test-only** public declarations; 8,325 duplicated lines / 1,219 clusters; **40 functions ≥ 200 lines**; **14 files ≥ 2,000 code lines**; 0 markers; tests 23/106 (872 + 376 `@[test]` functions).  Protocol `docs/refactoring.md`; baseline `tools/refactor_baseline.json`; one command: `tools/gates.sh --areas refactor --run` (baseline refreshed session 191 for the whole-program driver) |
 | Gate planning | `tools/gates.sh` area inference covers `lexer/` (→ `parser`), `main/` (→ `cli`), `bindgen/` (→ `bindings`) and every other `projects/mtc/src/mtc/` path (→ `compiler_core`, the full behaviour set).  An unclassified path is a hard error naming the file; previously it planned **zero** gates and exited 0 (session 159) |
 | Bootstrap `-j` | **removed** (session 159).  The flag was parsed, capped and warned about but never passed to a build command — a stage build is one whole-program `mtc build`.  `release.sh -j` removed with it; `bootstrap.sh -j 4` now errors |
 
@@ -7366,6 +7366,25 @@ examples **311/311**.
 - `semantic/analyzer.mt` drops from 11,342 to 11,264 physical lines.  Code
   and duplication totals are unchanged (148,765 code lines; 8,325 duplicated
   lines / 1,219 windows); long-function and large-file counts are unchanged.
+- Diagnostics and behavior oracles are unchanged.
+
+**Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap
+fixed point; `test/mt` **106/0**; strict **0**; conformance **26/26**; split
+full; watch **100 rebuilds**; CLI **231/231**; diagnostics/lint **0 differ**;
+examples **311/311**.
+
+### Session 211 — static/imported member resolution split
+
+- Moved `imported_static_member`, `static_type_receiver`,
+  `static_struct_receiver_type`, `static_builtin_type_name`,
+  `member_receiver_type_at`, and `is_imported_constant_member` into
+  `semantic/member_calls.mt` (684 lines total).
+- Routed analyzer, `call_arguments`, LSP navigation/completion, and the
+  completion/semantic tests through the module.  `semantic/analyzer.mt` drops
+  from 11,264 to 11,111 physical lines.
+- Code lines rise by 3 (helper visibility); duplication stays 8,325 / 1,219.
+  Long-function and large-file counts are unchanged.  Baseline refreshed at
+  194 files / 148,768 code lines.
 - Diagnostics and behavior oracles are unchanged.
 
 **Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap

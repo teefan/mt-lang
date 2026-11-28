@@ -12,6 +12,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.parser.state as pstate
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.control_flow.builder as cfgb
 import mtc.semantic.control_flow.graph as cfgg
 import mtc.semantic.types as types
@@ -3610,7 +3611,7 @@ function test_member_receiver_type_records_non_text_receivers() -> void:
     defer: analysis.diagnostics.release()
 
     # `get` in `read_box(b).get()` (line 12, column 24).
-    let ty = analyzer.member_receiver_type_at(ref_of(analysis), 12, 24) else:
+    let ty = member_calls.member_receiver_type_at(ref_of(analysis), 12, 24) else:
         expect(false, "call receiver type not recorded")
         return
     match ty:
@@ -3621,7 +3622,7 @@ function test_member_receiver_type_records_non_text_receivers() -> void:
             expect(false, "expected a named Box receiver")
 
     # A plain `this.value` chain stays a text chain (no recorded fallback).
-    expect(analyzer.member_receiver_type_at(ref_of(analysis), 6, 21).is_none())
+    expect(member_calls.member_receiver_type_at(ref_of(analysis), 6, 21).is_none())
 
 
 @[test]
@@ -3634,7 +3635,7 @@ function test_member_receiver_type_records_index_receivers() -> void:
     var analysis = analyzer.check_source_file(file)
     defer: analysis.diagnostics.release()
 
-    let ty = analyzer.member_receiver_type_at(ref_of(analysis), 5, 22) else:
+    let ty = member_calls.member_receiver_type_at(ref_of(analysis), 5, 22) else:
         expect(false, "index receiver type not recorded")
         return
     match ty:

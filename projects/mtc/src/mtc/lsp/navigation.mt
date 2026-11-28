@@ -19,6 +19,7 @@ import mtc.lexer.token as token_mod
 import mtc.lexer.token_kinds as tk
 import mtc.parser.ast as ast
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.types as types
 import mtc.loader.module_loader as loader
 import mtc.loader.path_resolver as resolver
@@ -2422,7 +2423,7 @@ function resolve_member_method_hover(
         # The receiver is not a name/field chain (`read(p).get_object`,
         # `build().field`, `a[0].b`): the analyzer recorded the expression's
         # inferred type at the member token's position.
-        match analyzer.member_receiver_type_at(analysis, target_line, target_character):
+        match member_calls.member_receiver_type_at(analysis, target_line, target_character):
             Option.some as recorded_ty:
                 receiver_ty = recorded_ty.value
                 resolved_receiver = true

@@ -19,6 +19,7 @@ import mtc.parser.ast as ast
 import mtc.parser.parser as parser
 import mtc.pretty_printer.ast_formatter as ast_formatter
 import mtc.semantic.analyzer as analyzer
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.types as types
 import mtc.loader.path_resolver as resolver
 import mtc.lsp.cursor as cursor
@@ -152,7 +153,7 @@ public function handle_completion(
     var recorded_type: types.Type = types.Type.ty_error
     let member_column = dot_member_column(source, line, character)
     if member_column > 0:
-        match analyzer.member_receiver_type_at(ref_of(analysis), line + 1, member_column):
+        match member_calls.member_receiver_type_at(ref_of(analysis), line + 1, member_column):
             Option.some as recorded_ty:
                 recorded_type = recorded_ty.value
                 has_recorded_type = true

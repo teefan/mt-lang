@@ -24,20 +24,20 @@ public function check_member_call(
     line: ptr_uint,
     column: ptr_uint
 ) -> types.Type:
-    match analyzer.imported_static_member(ctx, scope, receiver, method_name, line, column):
+    match imported_static_member(ctx, scope, receiver, method_name, line, column):
         Option.some as imported_static:
             return imported_static.value
         Option.none:
             pass
 
-    match analyzer.static_type_receiver(ctx, scope, receiver):
+    match static_type_receiver(ctx, scope, receiver):
         Option.some as tn:
             analyzer.check_static_member(ctx, tn.value, method_name, line, column)
             return types.named_type(name = tn.value, module_name = ctx.module_name, linkage_name = Option[str].none)
         Option.none:
             pass
 
-    match analyzer.static_struct_receiver_type(ctx, scope, receiver):
+    match static_struct_receiver_type(ctx, scope, receiver):
         Option.some as static_type:
             return check_typed_method_call(
                 ctx,
@@ -107,7 +107,7 @@ public function check_member_call(
     # A bare builtin type name as receiver (`mat4.identity()`, `str.len()`):
     # resolve the member against the type's methods, wherever an `extending`
     # block declares them (std.linear_algebra's `extending mat4:`).
-    match analyzer.static_builtin_type_name(ctx, scope, receiver):
+    match static_builtin_type_name(ctx, scope, receiver):
         Option.some as builtin_name:
             return check_typed_method_call(
                 ctx,
@@ -270,7 +270,7 @@ public function member_parameter_info(
             _:
                 pass
 
-    match analyzer.static_struct_receiver_type(ctx, scope, receiver):
+    match static_struct_receiver_type(ctx, scope, receiver):
         Option.some as static_type:
             match analyzer.resolve_method_sig(ctx, static_type.value, member):
                 Option.some as sig:
@@ -530,3 +530,155 @@ public function check_member(
             return types.Type.ty_error
         _:
             return types.Type.ty_error
+
+## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
+## one of its exported enums/flags/variants: validate that `member` is a member
+## of that type, flagging it otherwise.  None for anything else.
+public function imported_static_member(
+    ctx: ref[analyzer.Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr],
+    member: str,
+    line: ptr_uint,
+    column: ptr_uint
+) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_member_access as inner:
+                match read(inner.receiver):
+                    ast.Expr.expr_identifier as id:
+                        if analyzer.scope_get(scope, id.name) != null:
+                            return Option[types.Type].none
+                        let module_name_ptr = ctx.import_aliases.get(id.name) else:
+                            return Option[types.Type].none
+                        let binding_ptr = analyzer.find_binding(ctx, read(module_name_ptr)) else:
+                            return Option[types.Type].none
+                        if not read(binding_ptr).static_member_types.contains(inner.member_name):
+                            return Option[types.Type].none
+                        if not analyzer.binding_has_member(read(binding_ptr), inner.member_name, member):
+                            analyzer.report(ctx, line, column, analyzer.unknown_member_message("member", inner.member_name, member))
+                        return Option[types.Type].some(value = types.imported_type(
+                            module_name = read(module_name_ptr),
+                            name = inner.member_name,
+                            args = span[types.Type]()
+                        ))
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## Some(type name) when `receiver` is a bare identifier naming a locally-declared
+## enum/flags/variant that is not shadowed by a local value.
+public function static_type_receiver(ctx: ref[analyzer.Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if analyzer.scope_get(scope, id.name) != null:
+                    return Option[str].none
+                if ctx.static_member_types.contains(id.name):
+                    return Option[str].some(value = id.name)
+                return Option[str].none
+            _:
+                return Option[str].none
+
+
+## The struct type named by a static-method receiver: a bare local struct name
+## (`Counter`) or an imported `alias.Struct`.  None for values, enum/variant type
+## names (handled as static members), or unknown names.
+public function static_struct_receiver_type(
+    ctx: ref[analyzer.Context],
+    scope: ref[sscope.Scope],
+    receiver: ptr[ast.Expr]
+) -> Option[types.Type]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if analyzer.scope_get(scope, id.name) != null:
+                    return Option[types.Type].none
+                if ctx.structs.contains(id.name):
+                    return Option[types.Type].some(value = types.named_type(
+                        name = id.name,
+                        module_name = "",
+                        linkage_name = Option[str].none
+                    ))
+                return Option[types.Type].none
+            ast.Expr.expr_member_access as inner:
+                match read(inner.receiver):
+                    ast.Expr.expr_identifier as alias_id:
+                        if analyzer.scope_get(scope, alias_id.name) != null:
+                            return Option[types.Type].none
+                        let module_name_ptr = ctx.import_aliases.get(alias_id.name) else:
+                            return Option[types.Type].none
+                        let binding_ptr = analyzer.find_binding(ctx, read(module_name_ptr)) else:
+                            return Option[types.Type].none
+                        if read(binding_ptr).structs.contains(inner.member_name):
+                            return Option[types.Type].some(value = types.imported_type(
+                                module_name = read(module_name_ptr),
+                                name = inner.member_name,
+                                args = span[types.Type]()
+                            ))
+                        return Option[types.Type].none
+                    _:
+                        return Option[types.Type].none
+            _:
+                return Option[types.Type].none
+
+
+## A receiver identifier that names a builtin type (`mat4.identity()`), not
+## shadowed by a local and not one of the module's own structs or static-member
+## types (those take the earlier arms).
+public function static_builtin_type_name(ctx: ref[analyzer.Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+    unsafe:
+        match read(receiver):
+            ast.Expr.expr_identifier as id:
+                if analyzer.scope_get(scope, id.name) != null:
+                    return Option[str].none
+                if ctx.structs.contains(id.name) or ctx.static_member_types.contains(id.name):
+                    return Option[str].none
+                if ctx.types.contains(id.name) or analyzer.is_primitive_type_name(id.name):
+                    return Option[str].some(value = id.name)
+                return Option[str].none
+            _:
+                return Option[str].none
+
+
+## The inferred receiver type of the member access whose member name starts at
+## `line`:`column` (1-based), when the receiver is not a plain name/field chain.
+## None for the chains `receiver_path_type` already resolves.
+public function member_receiver_type_at(
+    analysis: ref[analyzer.Analysis],
+    line: ptr_uint,
+    column: ptr_uint
+) -> Option[types.Type]:
+    let ty_ptr = unsafe: read(analysis).member_receiver_types.get(analyzer.binding_key(line, column))
+    if ty_ptr == null:
+        return Option[types.Type].none
+    return Option[types.Type].some(value = unsafe: read(ty_ptr))
+
+
+## True when `ep` is `alias.member` and `member` is an exported constant of the
+## imported module.  The self records imported constants under a qualified name
+## but cannot fold one whose initializer references the imported module's own
+## imports (`std.sdl3`'s `ALPHA_OPAQUE = c.SDL_ALPHA_OPAQUE`); the host folds it
+## before the FFI range check.  The call site skips the range test for this
+## narrow shape rather than rejecting a valid foreign call.
+public function is_imported_constant_member(ctx: ref[analyzer.Context], ep: ptr[ast.Expr]?) -> bool:
+    let expr = ep else:
+        return false
+    unsafe:
+        match read(expr):
+            ast.Expr.expr_member_access as ma:
+                match read(ma.receiver):
+                    ast.Expr.expr_identifier as rid:
+                        if not ctx.import_aliases.contains(rid.name):
+                            return false
+                        let module_name_ptr = ctx.import_aliases.get(rid.name) else:
+                            return false
+                        let binding_ptr = analyzer.find_binding(ctx, read(module_name_ptr)) else:
+                            return false
+                        return read(binding_ptr).const_values.contains(ma.member_name)
+                    _:
+                        return false
+            _:
+                return false
