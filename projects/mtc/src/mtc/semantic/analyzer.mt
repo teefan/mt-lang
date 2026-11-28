@@ -20,6 +20,7 @@ import mtc.parser.ast as ast
 import mtc.semantic.types as types
 import mtc.semantic.preassign as preassign
 import mtc.semantic.call_arguments as call_arguments
+import mtc.semantic.member_calls as member_calls
 import mtc.semantic.type_compatibility as compat
 import mtc.semantic.expressions as sem_exprs
 import mtc.semantic.control_flow.builder as flow_builder
@@ -5750,7 +5751,7 @@ function let_else_error_type(value_type: types.Type) -> types.Type:
 #  Expression type inference (conservative)
 # =============================================================================
 
-function infer_expr(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
+public function infer_expr(ctx: ref[Context], scope: ref[sscope.Scope], ep: ptr[ast.Expr]) -> types.Type:
     let ty = infer_expr_inner(ctx, scope, ep)
     record_expr_type(ctx, ep, ty)
     return ty
@@ -7393,7 +7394,7 @@ function infer_and_check_call(
             unsafe:
                 match read(callee):
                     ast.Expr.expr_member_access as ma:
-                        return check_member_call(
+                        return member_calls.check_member_call(
                             ctx,
                             scope,
                             ma.receiver,
@@ -9159,159 +9160,6 @@ public function find_binding(ctx: ref[Context], module_name: str) -> ptr[ModuleB
         return read(imported).get(module_name)
 
 
-## Check a call whose callee is `receiver.method(...)`.  Enum/variant static
-## members (`Color.red(...)`, `lib.Token.ident(...)`) are validated for existence
-## only.  Struct static methods (`Counter.make(...)`, `lib.Adder.make(...)`) and
-## value-receiver instance methods (`p.method(...)`) are resolved to a signature
-## and argument-checked, with the method's return type flowing to the caller.
-function check_member_call(
-    ctx: ref[Context],
-    scope: ref[sscope.Scope],
-    receiver: ptr[ast.Expr],
-    method_name: str,
-    args: span[ast.Argument],
-    arg_types: span[types.Type],
-    any_named: bool,
-    line: ptr_uint,
-    column: ptr_uint
-) -> types.Type:
-    match imported_static_member(ctx, scope, receiver, method_name, line, column):
-        Option.some as imported_static:
-            return imported_static.value
-        Option.none:
-            pass
-
-    match static_type_receiver(ctx, scope, receiver):
-        Option.some as tn:
-            check_static_member(ctx, tn.value, method_name, line, column)
-            return types.named_type(name = tn.value, module_name = ctx.module_name, linkage_name = Option[str].none)
-        Option.none:
-            pass
-
-    match static_struct_receiver_type(ctx, scope, receiver):
-        Option.some as static_type:
-            return check_typed_method_call(
-                ctx,
-                static_type.value,
-                method_name,
-                args,
-                arg_types,
-                any_named,
-                line,
-                column
-            )
-        Option.none:
-            pass
-
-    # An instantiated imported receiver resolves the call against the binding
-    # with the type arguments substituted (`vec.Vec[int].create()` -> `Vec[int]`);
-    # the signature is still argument-checked, as the local-type path does.
-    match specialization_imported_receiver(ctx, scope, receiver):
-        Option.some as instantiated:
-            check_editable_receiver_immutable(ctx, scope, receiver, instantiated.value, method_name, line, column)
-            match imported_method_call_type(
-                ctx,
-                instantiated.value,
-                method_name,
-                args,
-                arg_types,
-                any_named,
-                line,
-                column
-            ):
-                Option.some as method_type:
-                    return method_type.value
-                Option.none:
-                    pass
-        Option.none:
-            pass
-
-    # A specialization of a locally-known type is an instance of that type
-    # (`Result[int, int].success(value = 7)`); for a variant, enum or flags the
-    # member is an arm or member and the call's type is the instance itself.
-    # A struct's member is an associated function instead
-    # (`BinaryHeap[T].parent_index(child)`), so it resolves like any other
-    # method on the instance.
-    match type_instance_receiver(ctx, scope, receiver):
-        Option.some as instance:
-            match instance.value:
-                types.Type.ty_imported as im:
-                    let im_bp = unsafe: read(im.payload)
-                    if ctx.static_member_types.contains(im_bp.name):
-                        check_static_member(ctx, im_bp.name, method_name, line, column)
-                        return instance.value
-                    return check_typed_method_call(
-                        ctx,
-                        instance.value,
-                        method_name,
-                        args,
-                        arg_types,
-                        any_named,
-                        line,
-                        column
-                    )
-                _:
-                    pass
-        Option.none:
-            pass
-
-    # A bare builtin type name as receiver (`mat4.identity()`, `str.len()`):
-    # resolve the member against the type's methods, wherever an `extending`
-    # block declares them (std.linear_algebra's `extending mat4:`).
-    match static_builtin_type_name(ctx, scope, receiver):
-        Option.some as builtin_name:
-            return check_typed_method_call(
-                ctx,
-                types.named_type(name = builtin_name.value, module_name = "", linkage_name = Option[str].none),
-                method_name,
-                args,
-                arg_types,
-                any_named,
-                line,
-                column
-            )
-        Option.none:
-            pass
-
-    # Builtin event methods (`ready.subscribe(listener)`, `ready.emit(value)`).
-    match event_value_receiver(ctx, scope, receiver):
-        Option.some as event_name:
-            let _ = event_name
-            # The lowering resolves the event method from the receiver's
-            # recorded type, so it must be inferred here too (this arm returns
-            # before the generic path below would).
-            let _recv_ty = infer_expr(ctx, scope, receiver)
-            return event_method_call_type(ctx, method_name, event_name.value)
-        Option.none:
-            pass
-
-    let recv_ty = infer_expr(ctx, scope, receiver)
-    # The LSP's text-based receiver walk cannot resolve a call/index/cast
-    # receiver, so record the expression's inferred type at the member token's
-    # position (see `member_receiver_types`).
-    if ctx.tooling_facts and not receiver_is_text_chain(receiver):
-        ctx.member_receiver_types.set(binding_key(line, column), recv_ty)
-    let recv = unwrap_ref(recv_ty)
-    # A raw/mutable pointer receiver projects to its pointee only when the
-    # pointer type itself declares no method of that name (the host's
-    # `project_method_receiver_type`): `ptr[T].load()` resolves on the pointer
-    # (`extending ptr[T]` in std.mem.ptr), `own[SleepState].ready` on the pointee.
-    var member_recv = recv
-    match resolve_method_sig(ctx, recv, method_name):
-        Option.some:
-            pass
-        Option.none:
-            if not generic_receiver_has_method(ctx, recv, method_name):
-                member_recv = project_pointer_receiver(recv)
-    check_editable_receiver_immutable(ctx, scope, receiver, member_recv, method_name, line, column)
-    match imported_method_call_type(ctx, member_recv, method_name, args, arg_types, any_named, line, column):
-        Option.some as substituted_method:
-            return substituted_method.value
-        Option.none:
-            pass
-    return check_typed_method_call(ctx, member_recv, method_name, args, arg_types, any_named, line, column)
-
-
 ## See through a `ref[T]` receiver to `T` for member access and method calls,
 ## matching the language's auto-dereference of `ref` receivers.  An explicit
 ## lifetime (`ref[@a, T]`) occupies the first argument, so the referent is the
@@ -9330,7 +9178,7 @@ public function unwrap_ref(t: types.Type) -> types.Type:
 ## True when a generic receiver's own type declares `method_name` among the
 ## visible bindings — `extending ptr[T]` lives in an imported std module, and
 ## such a receiver must not be projected to its pointee.
-function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_name: str) -> bool:
+public function generic_receiver_has_method(ctx: ref[Context], t: types.Type, method_name: str) -> bool:
     match t:
         types.Type.ty_generic as g:
             let g_bp = unsafe: read(g.payload)
@@ -9367,7 +9215,7 @@ public function project_pointer_receiver(t: types.Type) -> types.Type:
 ## Resolve and check a method call against a known receiver type (local or
 ## imported): argument-check the signature and flow its return type, or fall back
 ## to a member-existence check when no signature is known.
-function check_typed_method_call(
+public function check_typed_method_call(
     ctx: ref[Context],
     receiver_type: types.Type,
     method_name: str,
@@ -9507,7 +9355,7 @@ function editable_receiver_assignable(scope: ref[sscope.Scope], name: str) -> bo
     return not scope_is_let(scope, name)
 
 
-function check_editable_receiver_immutable(
+public function check_editable_receiver_immutable(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver_expr: ptr[ast.Expr],
@@ -9987,7 +9835,7 @@ function try_imported_type(
 
 ## Resolve `alias.Type[args]` in expression position to the instantiated
 ## imported type (none when it is not an imported type).
-function specialization_imported_receiver(
+public function specialization_imported_receiver(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr]
@@ -10039,7 +9887,7 @@ function type_owner_module(ctx: ref[Context], name: str) -> str:
 ## `Pair[A, B](…)` — denotes an instance of that type.  Returns the instance
 ## type (module-qualified, type arguments included); none for any other
 ## receiver.  Imported receivers are handled by `specialization_imported_receiver`.
-function type_instance_receiver(
+public function type_instance_receiver(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr]
@@ -10067,7 +9915,7 @@ function type_instance_receiver(
 ## A receiver identifier that names a builtin type (`mat4.identity()`), not
 ## shadowed by a local and not one of the module's own structs or static-member
 ## types (those take the earlier arms).
-function static_builtin_type_name(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+public function static_builtin_type_name(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -10084,7 +9932,7 @@ function static_builtin_type_name(ctx: ref[Context], scope: ref[sscope.Scope], r
 
 ## A receiver identifier naming an event declared in this module
 ## (`ready.subscribe(...)`).
-function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+public function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -10102,7 +9950,7 @@ function event_value_receiver(ctx: ref[Context], scope: ref[sscope.Scope], recei
 ## `Result[Subscription, EventError]`, `unsubscribe` a `bool`, `emit` `void`,
 ## and `wait` a `Task[Result[payload|void, EventError]]` — the payload is the
 ## event's declared type, so `await event.wait()` is the matchable `Result`.
-function event_method_call_type(ctx: ref[Context], method_name: str, event_name: str) -> types.Type:
+public function event_method_call_type(ctx: ref[Context], method_name: str, event_name: str) -> types.Type:
     if method_name == "subscribe" or method_name == "subscribe_once":
         var results = vec.Vec[types.Type].create()
         results.push(types.named_type(name = "Subscription", module_name = "", linkage_name = Option[str].none))
@@ -10243,7 +10091,7 @@ function imported_method_signature(
 ## `imported_method_return_type` with the call's arguments checked against the
 ## (substituted) signature, so an arity or argument-type mismatch is still
 ## reported for an instantiated imported receiver.
-function imported_method_call_type(
+public function imported_method_call_type(
     ctx: ref[Context],
     recv: types.Type,
     member: str,
@@ -10404,7 +10252,7 @@ function resolve_member_access(
 ## field chain rooted at one — the shape the LSP resolves from source text
 ## (`ctx.cache.get`).  Every other receiver (a call, an index, a cast, a
 ## dereference) is recorded in `member_receiver_types` for the LSP fallback.
-function receiver_is_text_chain(ep: ptr[ast.Expr]) -> bool:
+public function receiver_is_text_chain(ep: ptr[ast.Expr]) -> bool:
     unsafe:
         match read(ep):
             ast.Expr.expr_identifier:
@@ -10432,7 +10280,7 @@ public function member_receiver_type_at(
 ## Resolve `alias.Type.member` where `alias` is an imported module and `Type` is
 ## one of its exported enums/flags/variants: validate that `member` is a member
 ## of that type, flagging it otherwise.  None for anything else.
-function imported_static_member(
+public function imported_static_member(
     ctx: ref[Context],
     scope: ref[sscope.Scope],
     receiver: ptr[ast.Expr],
@@ -10472,7 +10320,7 @@ function binding_has_member(binding: ModuleBinding, type_name: str, member: str)
 
 ## Some(type name) when `receiver` is a bare identifier naming a locally-declared
 ## enum/flags/variant that is not shadowed by a local value.
-function static_type_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
+public function static_type_receiver(ctx: ref[Context], scope: ref[sscope.Scope], receiver: ptr[ast.Expr]) -> Option[str]:
     unsafe:
         match read(receiver):
             ast.Expr.expr_identifier as id:
@@ -10485,7 +10333,7 @@ function static_type_receiver(ctx: ref[Context], scope: ref[sscope.Scope], recei
                 return Option[str].none
 
 
-function check_static_member(ctx: ref[Context], type_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
+public function check_static_member(ctx: ref[Context], type_name: str, member: str, line: ptr_uint, column: ptr_uint) -> void:
     if has_method(ctx, type_name, member):
         return
     report(ctx, line, column, unknown_member_message("member", type_name, member))
