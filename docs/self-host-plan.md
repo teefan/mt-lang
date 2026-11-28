@@ -14,7 +14,7 @@ history.
 
 ## Contents
 
-- [Status at a glance](#status-at-a-glance-session-209-2026-11-26)
+- [Status at a glance](#status-at-a-glance-session-210-2026-11-26)
 - [Handoff](#handoff-session-158)
 - [LSP enhancement plan](./lsp-enhancement-plan.md) (session 144 audit)
 - [Host retirement program](#host-retirement-program)
@@ -112,7 +112,7 @@ history.
 - [Risks and notes](#risks-and-notes)
 - [Provenance](#provenance)
 
-## Status at a glance (session 209, 2026-11-26)
+## Status at a glance (session 210, 2026-11-26)
 
 | Area | State |
 | --- | --- |
@@ -7352,6 +7352,21 @@ examples **311/311**.
   large-file counts are unchanged.  Baseline refreshed at 194 files /
   148,765 code lines.
 - All C output and behavior oracles are unchanged.
+
+**Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap
+fixed point; `test/mt` **106/0**; strict **0**; conformance **26/26**; split
+full; watch **100 rebuilds**; CLI **231/231**; diagnostics/lint **0 differ**;
+examples **311/311**.
+
+### Session 210 — analyzer member dispatcher split
+
+- Moved `check_member` into `semantic/member_calls.mt` (532 lines total)
+  and routed the remaining analyzer call through the module; the member
+  sub-check helpers are public.
+- `semantic/analyzer.mt` drops from 11,342 to 11,264 physical lines.  Code
+  and duplication totals are unchanged (148,765 code lines; 8,325 duplicated
+  lines / 1,219 windows); long-function and large-file counts are unchanged.
+- Diagnostics and behavior oracles are unchanged.
 
 **Verified with the compiler-core gate:** dev + IR verify **23/0**; bootstrap
 fixed point; `test/mt` **106/0**; strict **0**; conformance **26/26**; split

@@ -10094,7 +10094,7 @@ function resolve_member_access(
                                         else:
                                             mark_required_unsafe(ctx)
                                     let recv = project_pointer_receiver(raw_recv)
-                                    return check_member(ctx, recv, member, is_method_call, line, column)
+                                    return member_calls.check_member(ctx, recv, member, is_method_call, line, column)
 
 
 ## True when a member access's receiver expression is a plain identifier or a
@@ -10298,84 +10298,6 @@ function has_field(fields: span[FieldEntry], name: str) -> bool:
     return false
 
 
-## Resolve a member access on a receiver.  For a locally-declared struct
-## instance, a member must be a field, an `extending` method, or the builtin
-## `with`; anything else is reported ("unknown field" for a read, "unknown
-## method" when the member is the callee of a call).  Field reads yield the
-## field type; everything else (methods, non-struct receivers) is permissive.
-public function check_member(
-    ctx: ref[Context],
-    receiver: types.Type,
-    member: str,
-    is_method_call: bool,
-    line: ptr_uint,
-    column: ptr_uint
-) -> types.Type:
-    match receiver:
-        types.Type.ty_named as n:
-            let n_np = unsafe: read(n.payload)
-            return check_named_member(ctx, n_np.module_name, n_np.name, member, is_method_call, line, column)
-        types.Type.ty_imported as im:
-            let im_bp = unsafe: read(im.payload)
-            return check_imported_receiver_member(
-                ctx,
-                im_bp.module_name,
-                im_bp.name,
-                im_bp.args,
-                member,
-                is_method_call,
-                line,
-                column
-            )
-        types.Type.ty_variant_arm_payload as ap:
-            # A bound match arm (`Option.some as p`) is the arm's payload struct
-            # — the host's `Types::VariantArmPayload` — so `p.value` reads the
-            # field the analyzer substituted for the scrutinee's arguments.
-            let payload = unsafe: read(ap.payload)
-            var fi: ptr_uint = 0
-            while fi < payload.fields.len:
-                let field = unsafe: read(payload.fields.data + fi)
-                if field.name == member:
-                    return field.ty
-                fi += 1
-            return types.Type.ty_error
-        types.Type.ty_var as v:
-            return check_type_var_member(ctx, v.name, member, is_method_call, line, column)
-        types.Type.ty_str:
-            # The host's `Types::StringView#fields`: `data: ptr[char]` and
-            # `len: ptr_uint`.  Every other member (an `extending str:` method)
-            # stays on the permissive path.
-            if member.equal("data"):
-                return types.generic_type(name = "ptr", args = alloc_one_type_arg(types.primitive("char")))
-            if member.equal("len"):
-                return types.primitive("ptr_uint")
-            return types.Type.ty_error
-        types.Type.ty_primitive as p:
-            return check_primitive_member(p.name, member)
-        types.Type.ty_generic as g:
-            let g_bp = unsafe: read(g.payload)
-            return check_generic_member(ctx, g_bp.name, g_bp.args, member, is_method_call, line, column)
-        types.Type.ty_tuple as tp:
-            let tp_bp = unsafe: read(tp.payload)
-            # A positional tuple reads `._0`/`._1`; a named tuple's elements read
-            # by name (the host's `Tuple#field`, whose positional names are `_N`).
-            var index: int = -1
-            match tp_bp.field_names:
-                Option.some as names:
-                    var ni: ptr_uint = 0
-                    while ni < names.value.len and index < 0:
-                        if unsafe: read(names.value.data + ni) == member:
-                            index = int<-ni
-                        ni += 1
-                Option.none:
-                    index = positional_tuple_index(member)
-            if index >= 0 and ptr_uint<-index < tp_bp.elements.len:
-                return unsafe: read(tp_bp.elements.data + ptr_uint<-index)
-            return types.Type.ty_error
-        _:
-            return types.Type.ty_error
-
-
 ## The value a member access yields when it is called: a function-typed field
 ## (`node.condition_fn(...)`) returns its declared return type, not the
 ## function type itself.  The host resolves callable values through
@@ -10391,7 +10313,7 @@ public function member_call_result_type(field_ty: types.Type, is_method_call: bo
             return field_ty
 
 
-function check_named_member(
+public function check_named_member(
     ctx: ref[Context],
     module_name: str,
     name: str,
@@ -10444,7 +10366,7 @@ function check_named_member(
     return types.Type.ty_error
 
 
-function check_imported_receiver_member(
+public function check_imported_receiver_member(
     ctx: ref[Context],
     module_name: str,
     name: str,
@@ -10474,7 +10396,7 @@ function check_imported_receiver_member(
     return check_imported_member_args(ctx, module_name, name, member, args, is_method_call, line, column)
 
 
-function check_primitive_member(name: str, member: str) -> types.Type:
+public function check_primitive_member(name: str, member: str) -> types.Type:
     # The host's `Types::Vector`/`Matrix`/`Quaternion` field maps:
     # vectors and quaternions expose `x`/`y`/`z`/`w` (the vector's
     # width is its name suffix), and a matrix exposes `col0..colN-1` as
@@ -10509,7 +10431,7 @@ function check_primitive_member(name: str, member: str) -> types.Type:
     return types.Type.ty_error
 
 
-function check_generic_member(
+public function check_generic_member(
     ctx: ref[Context],
     name: str,
     args: span[types.Type],
@@ -10558,7 +10480,7 @@ function check_generic_member(
 
 
 ## `_0`/`_1`/… -> the tuple element index, -1 for any other name.
-function positional_tuple_index(member: str) -> int:
+public function positional_tuple_index(member: str) -> int:
     if member.len < 2 or member.byte_at(0) != '_':
         return -1
     var index: int = 0
@@ -10576,7 +10498,7 @@ function positional_tuple_index(member: str) -> int:
 ## the methods of its `implements` constraints.  When every constraint interface
 ## resolves, a member not declared by any of them is reported; if a constraint is
 ## unresolvable, or `T` is unconstrained, access stays permissive.
-function check_type_var_member(
+public function check_type_var_member(
     ctx: ref[Context],
     var_name: str,
     member: str,
@@ -10823,7 +10745,7 @@ function try_builtin_call(
     return Option[types.Type].none
 
 
-function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
+public function alloc_one_type_arg(ty: types.Type) -> span[types.Type]:
     var v = vec.Vec[types.Type].create()
     v.push(ty)
     return v.as_span()

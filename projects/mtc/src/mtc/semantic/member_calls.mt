@@ -226,7 +226,7 @@ public function check_typed_method_call(
                     pass
             return sig.value.return_type
         Option.none:
-            let member_ty = analyzer.check_member(ctx, receiver_type, method_name, true, line, column)
+            let member_ty = check_member(ctx, receiver_type, method_name, true, line, column)
             match member_ty:
                 types.Type.ty_function as callable:
                     let ft = unsafe: read(callable.payload)
@@ -453,3 +453,80 @@ public function alias_binding_has_member(ctx: ref[analyzer.Context], module_name
                     _:
                         pass
     return false
+
+## Resolve a member access on a receiver.  For a locally-declared struct
+## instance, a member must be a field, an `extending` method, or the builtin
+## `with`; anything else is reported ("unknown field" for a read, "unknown
+## method" when the member is the callee of a call).  Field reads yield the
+## field type; everything else (methods, non-struct receivers) is permissive.
+public function check_member(
+    ctx: ref[analyzer.Context],
+    receiver: types.Type,
+    member: str,
+    is_method_call: bool,
+    line: ptr_uint,
+    column: ptr_uint
+) -> types.Type:
+    match receiver:
+        types.Type.ty_named as n:
+            let n_np = unsafe: read(n.payload)
+            return analyzer.check_named_member(ctx, n_np.module_name, n_np.name, member, is_method_call, line, column)
+        types.Type.ty_imported as im:
+            let im_bp = unsafe: read(im.payload)
+            return analyzer.check_imported_receiver_member(
+                ctx,
+                im_bp.module_name,
+                im_bp.name,
+                im_bp.args,
+                member,
+                is_method_call,
+                line,
+                column
+            )
+        types.Type.ty_variant_arm_payload as ap:
+            # A bound match arm (`Option.some as p`) is the arm's payload struct
+            # — the host's `Types::VariantArmPayload` — so `p.value` reads the
+            # field the analyzer substituted for the scrutinee's arguments.
+            let payload = unsafe: read(ap.payload)
+            var fi: ptr_uint = 0
+            while fi < payload.fields.len:
+                let field = unsafe: read(payload.fields.data + fi)
+                if field.name == member:
+                    return field.ty
+                fi += 1
+            return types.Type.ty_error
+        types.Type.ty_var as v:
+            return analyzer.check_type_var_member(ctx, v.name, member, is_method_call, line, column)
+        types.Type.ty_str:
+            # The host's `Types::StringView#fields`: `data: ptr[char]` and
+            # `len: ptr_uint`.  Every other member (an `extending str:` method)
+            # stays on the permissive path.
+            if member.equal("data"):
+                return types.generic_type(name = "ptr", args = analyzer.alloc_one_type_arg(types.primitive("char")))
+            if member.equal("len"):
+                return types.primitive("ptr_uint")
+            return types.Type.ty_error
+        types.Type.ty_primitive as p:
+            return analyzer.check_primitive_member(p.name, member)
+        types.Type.ty_generic as g:
+            let g_bp = unsafe: read(g.payload)
+            return analyzer.check_generic_member(ctx, g_bp.name, g_bp.args, member, is_method_call, line, column)
+        types.Type.ty_tuple as tp:
+            let tp_bp = unsafe: read(tp.payload)
+            # A positional tuple reads `._0`/`._1`; a named tuple's elements read
+            # by name (the host's `Tuple#field`, whose positional names are `_N`).
+            var index: int = -1
+            match tp_bp.field_names:
+                Option.some as names:
+                    var ni: ptr_uint = 0
+                    while ni < names.value.len and index < 0:
+                        if unsafe: read(names.value.data + ni) == member:
+                            index = int<-ni
+                        ni += 1
+                Option.none:
+                    index = analyzer.positional_tuple_index(member)
+            if index >= 0 and ptr_uint<-index < tp_bp.elements.len:
+                return unsafe: read(tp_bp.elements.data + ptr_uint<-index)
+            return types.Type.ty_error
+        _:
+            return types.Type.ty_error
