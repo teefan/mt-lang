@@ -181,6 +181,7 @@
     "build_cache": "build_cache",
     "c_backend.c_backend": "c_backend",
     "c_backend.driver": "driver",
+    "c_backend.expression": "expression",
     "c_backend.format_string": "format_string",
     "c_backend.program": "program_emitter",
     "c_backend.reachability": "reachability",
@@ -1603,7 +1604,7 @@
     ]
   },
   "sizes": {
-    "total_code": 148756,
+    "total_code": 148765,
     "functions_over_limit": 40,
     "files_over_limit": 14,
     "files": {
@@ -1662,16 +1663,22 @@
         "max_function": 78
       },
       "projects/mtc/src/mtc/c_backend/c_backend.mt": {
-        "lines": 7279,
-        "code": 5981,
+        "lines": 7080,
+        "code": 5799,
         "max_line": 214,
-        "max_function": 202
+        "max_function": 125
       },
       "projects/mtc/src/mtc/c_backend/driver.mt": {
         "lines": 285,
         "code": 243,
         "max_line": 257,
         "max_function": 270
+      },
+      "projects/mtc/src/mtc/c_backend/expression.mt": {
+        "lines": 213,
+        "code": 191,
+        "max_line": 124,
+        "max_function": 202
       },
       "projects/mtc/src/mtc/c_backend/format_string.mt": {
         "lines": 299,
